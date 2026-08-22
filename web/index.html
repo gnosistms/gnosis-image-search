@@ -10,13 +10,13 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Gnosis Image Search home"><img class="brand-mark" src="/gnosis-caduceus.svg" alt=""><span class="brand-name">Gnosis Image Search</span></a>
+    <a class="brand" href="/" aria-label="Gnosis Image Search home"><img class="brand-mark" src="/gnosis-caduceus.svg" alt=""></a>
     <form id="search-form" class="search-form">
       <label class="sr-only" for="query">Search images</label>
-      <input id="query" type="search" maxlength="240" placeholder="Search images" autocomplete="off" autofocus>
+      <input id="query" type="search" maxlength="240" placeholder="Search images" autocomplete="off">
       <button class="search-button" type="submit" aria-label="Search">⌕</button>
     </form>
-    <button id="toggle-sources" class="filter-button" type="button" aria-expanded="false">Collections</button>
+    <button id="toggle-sources" class="filter-button" type="button" aria-expanded="false">Collections · 0</button>
   </header>
 
   <section id="source-panel" class="source-panel" hidden>
@@ -35,11 +35,35 @@
 
   <main id="content">
     <section id="empty-state" class="empty-state">
-      <p>Search across selected visual collections.</p>
-      <div class="examples">
-        <button data-query="Sophia divine wisdom">Sophia divine wisdom</button>
-        <button data-query="rose cross engraving">Rose cross engraving</button>
-        <button data-query="Saint Peter escaping prison">Saint Peter escaping prison</button>
+      <div class="hero-copy">
+        <div class="hero-brand">
+          <img src="/gnosis-caduceus.svg" alt="">
+          <span>Gnosis Image Search</span>
+        </div>
+        <h1>Search the world's best<br>museum websites.</h1>
+        <p>Get high resolution images with creative commons licenses—ready to illustrate beautiful books.</p>
+        <form id="hero-search-form" class="hero-search-form">
+          <label class="sr-only" for="hero-query">Search images</label>
+          <input id="hero-query" type="search" maxlength="240" placeholder="What would you like to find?" autocomplete="off" autofocus>
+          <button type="submit" aria-label="Search">⌕</button>
+        </form>
+        <button id="hero-toggle-sources" class="hero-filter-button" type="button" aria-expanded="false">
+          Choose collections <span id="hero-source-count">· 0 selected</span>
+        </button>
+      </div>
+      <div class="hero-artwall" aria-label="Religious artworks from the J. Paul Getty Museum">
+        <figure class="hero-art hero-art-one">
+          <img src="https://media.getty.edu/iiif/image/f7cdfe9f-6fd2-4d55-bd34-733d8dad69b2/full/!600,600/0/default.jpg" alt="The Annunciation, about 1390–1395">
+        </figure>
+        <figure class="hero-art hero-art-two">
+          <img src="https://media.getty.edu/iiif/image/3cc5add5-126f-4aa0-ad58-4c96cbcc9ae1/full/!600,600/0/default.jpg" alt="The Annunciation, about 1660–1665">
+        </figure>
+        <figure class="hero-art hero-art-three">
+          <img src="https://media.getty.edu/iiif/image/a0f7035c-b766-4e01-ae46-a8fff7c4136b/full/!600,600/0/default.jpg" alt="Madonna and Child with Musical Angels, about 1410">
+        </figure>
+        <figure class="hero-art hero-art-four">
+          <img src="https://media.getty.edu/iiif/image/39078720-93f5-4034-a98f-b300ad2f311e/full/!600,600/0/default.jpg" alt="Adoration of the Magi, about 1520">
+        </figure>
       </div>
     </section>
     <div id="gallery" class="gallery" aria-live="polite"></div>

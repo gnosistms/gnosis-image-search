@@ -1,11 +1,15 @@
 const form = document.querySelector('#search-form');
 const queryInput = document.querySelector('#query');
+const heroForm = document.querySelector('#hero-search-form');
+const heroQueryInput = document.querySelector('#hero-query');
 const gallery = document.querySelector('#gallery');
 const emptyState = document.querySelector('#empty-state');
 const statusLine = document.querySelector('#search-status');
 const sourcePanel = document.querySelector('#source-panel');
 const sourceOptions = document.querySelector('#source-options');
 const toggleSources = document.querySelector('#toggle-sources');
+const heroToggleSources = document.querySelector('#hero-toggle-sources');
+const heroSourceCount = document.querySelector('#hero-source-count');
 const tileTemplate = document.querySelector('#tile-template');
 const detailPanel = document.querySelector('#detail-panel');
 const detailImageLink = document.querySelector('#detail-image-link');
@@ -42,6 +46,18 @@ const MAX_PARALLEL_COLLECTIONS = 6;
 
 function selectedSources() {
   return [...sourceOptions.querySelectorAll('input:checked')].map(input => input.value);
+}
+
+function updateSourceCount() {
+  const count = selectedSources().length;
+  toggleSources.textContent = `Collections · ${count}`;
+  heroSourceCount.textContent = `· ${count} selected`;
+}
+
+function setSourcePanelOpen(open) {
+  sourcePanel.hidden = !open;
+  toggleSources.setAttribute('aria-expanded', String(open));
+  heroToggleSources.setAttribute('aria-expanded', String(open));
 }
 
 async function getJson(url, options = {}) {
@@ -106,6 +122,7 @@ async function loadSources() {
     label.append(input, name);
     sourceOptions.append(label);
   }
+  updateSourceCount();
 }
 
 function imageRatio(item) {
@@ -335,11 +352,15 @@ function failureStatus(failures) {
 async function runSearch(query) {
   const selected = selectedSources();
   if (!selected.length) {
-    sourcePanel.hidden = false;
-    toggleSources.setAttribute('aria-expanded', 'true');
+    setSourcePanelOpen(true);
+    heroSourceCount.textContent = '· select at least one';
     statusLine.textContent = 'Select at least one collection.';
     return;
   }
+  queryInput.value = query;
+  heroQueryInput.value = query;
+  document.body.classList.add('search-active');
+  setSourcePanelOpen(false);
   const sequence = ++currentSearchSequence;
   cancelPreviousSearch();
   currentResults = [];
@@ -499,22 +520,33 @@ form.addEventListener('submit', event => {
   if (query) runSearch(query);
 });
 
+heroForm.addEventListener('submit', event => {
+  event.preventDefault();
+  const query = heroQueryInput.value.trim();
+  if (query) runSearch(query);
+});
+
 toggleSources.addEventListener('click', () => {
   const open = sourcePanel.hidden;
-  sourcePanel.hidden = !open;
-  toggleSources.setAttribute('aria-expanded', String(open));
+  setSourcePanelOpen(open);
 });
+heroToggleSources.addEventListener('click', () => setSourcePanelOpen(sourcePanel.hidden));
 document.addEventListener('pointerdown', event => {
   if (!sourcePanel.hidden && !sourcePanel.contains(event.target)
-      && !toggleSources.contains(event.target)) {
-    sourcePanel.hidden = true;
-    toggleSources.setAttribute('aria-expanded', 'false');
+      && !toggleSources.contains(event.target)
+      && !heroToggleSources.contains(event.target)) {
+    setSourcePanelOpen(false);
   }
 });
-document.querySelector('#select-all').addEventListener('click', () =>
-  sourceOptions.querySelectorAll('input').forEach(input => { input.checked = true; }));
-document.querySelector('#select-none').addEventListener('click', () =>
-  sourceOptions.querySelectorAll('input').forEach(input => { input.checked = false; }));
+document.querySelector('#select-all').addEventListener('click', () => {
+  sourceOptions.querySelectorAll('input').forEach(input => { input.checked = true; });
+  updateSourceCount();
+});
+document.querySelector('#select-none').addEventListener('click', () => {
+  sourceOptions.querySelectorAll('input').forEach(input => { input.checked = false; });
+  updateSourceCount();
+});
+sourceOptions.addEventListener('change', updateSourceCount);
 document.querySelector('#close-panel').addEventListener('click', closeDetails);
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDetails(); });
 document.querySelectorAll('[data-query]').forEach(button => {
