@@ -11,9 +11,9 @@
   "scripts": {
     "start": "electron-forge start",
     "build:backend": "bash scripts/build-backend.sh",
-    "package:mac": "npm run build:backend && npx --yes node@22 node_modules/@electron-forge/cli/dist/electron-forge.js package --platform=darwin --arch=arm64",
-    "make:mac": "npm run build:backend && npx --yes node@22 node_modules/@electron-forge/cli/dist/electron-forge.js make --platform=darwin --arch=arm64",
-    "publish:mac": "npm run build:backend && npx --yes node@22 node_modules/@electron-forge/cli/dist/electron-forge.js publish --platform=darwin --arch=arm64"
+    "package:mac": "npm run build:backend && electron-forge package --platform=darwin --arch=arm64",
+    "make:mac": "npm run build:backend && electron-forge make --platform=darwin --arch=arm64",
+    "publish:mac": "npm run build:backend && electron-forge publish --platform=darwin --arch=arm64"
   },
   "engines": {
     "node": ">=22 <24"

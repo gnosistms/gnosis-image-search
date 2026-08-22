@@ -25,6 +25,7 @@ Requirements: Node.js 22, Python 3.12, and the Python packages `numpy`, `Pillow`
 `requests`, `torch`, and `transformers`.
 
 ```bash
+nvm use
 npm install
 npm start
 ```
