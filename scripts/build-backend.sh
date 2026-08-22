@@ -15,6 +15,9 @@ fi
 if ! PYTHONPATH="$PYINSTALLER_DIR" "$PYTHON_BIN" -m PyInstaller --version >/dev/null 2>&1; then
   "$PYTHON_BIN" -m pip install --quiet --target "$PYINSTALLER_DIR" 'pyinstaller==6.22.2'
 fi
+if ! PYTHONPATH="$PYINSTALLER_DIR" "$PYTHON_BIN" -c 'import cryptography' >/dev/null 2>&1; then
+  "$PYTHON_BIN" -m pip install --quiet --target "$PYINSTALLER_DIR" 'cryptography==46.0.5'
+fi
 rm -rf "$OUTPUT_DIR" "$PROJECT_DIR/build/pyinstaller" "$PROJECT_DIR/build/gnosis-search-engine.spec"
 mkdir -p "$OUTPUT_DIR"
 
@@ -39,6 +42,8 @@ PYINSTALLER_CONFIG_DIR="$PROJECT_DIR/build/pyinstaller-config" PYTHONPATH="$PYIN
   --hidden-import transformers.models.clip.modeling_clip \
   --hidden-import transformers.models.clip.processing_clip \
   --hidden-import transformers.models.clip.tokenization_clip \
+  --hidden-import cryptography.hazmat.primitives.ciphers.aead \
+  --hidden-import keys \
   --hidden-import requests \
   --exclude-module cv2 \
   --exclude-module datasets \
@@ -58,3 +63,7 @@ PYINSTALLER_CONFIG_DIR="$PROJECT_DIR/build/pyinstaller-config" PYTHONPATH="$PYIN
   --add-data "$PROJECT_DIR/data/gnosis-media.json:./data" \
   --add-data "$PROJECT_DIR/data/nga-search.db:./data" \
   "$PROJECT_DIR/server.py"
+
+PYTHONPATH="$PYINSTALLER_DIR" "$PYTHON_BIN" \
+  "$PROJECT_DIR/scripts/package-europeana-key.py" \
+  "$OUTPUT_DIR/gnosis-search-engine/credentials"

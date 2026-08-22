@@ -717,51 +717,6 @@ def _gnosis_live(query, need, cue=None):
             continue
     return out
 
-# ---------------- Smithsonian Open Access (api.data.gov key) ----------------
-
-def smithsonian(query, need, cue=None):
-    import keys as _keys
-    k = _keys.get_key("smithsonian")
-    if not k:
-        return []
-    d = _get_json("https://api.si.edu/openaccess/api/v1.0/search?"
-                  + urllib.parse.urlencode(
-                      {"q": f'{query} AND online_media_type:"Images"',
-                       "rows": min(need * 3, 50), "api_key": k}), "smithsonian")
-    out = []
-    for r in ((d or {}).get("response", {}) or {}).get("rows", []):
-        if len(out) >= need * 2:
-            break
-        try:
-            c = r.get("content", {}) or {}
-            dn = c.get("descriptiveNonRepeating", {}) or {}
-            media = [m for m in (dn.get("online_media", {}) or {}).get("media", [])
-                     if m.get("type") == "Images" and m.get("content")
-                     and (m.get("usage") or {}).get("access") == "CC0"]
-            if not media:
-                continue
-            m = media[0]
-            hi = next((res for res in m.get("resources") or []
-                       if res.get("label") == "High-resolution JPEG"), {})
-            ft = c.get("freetext", {}) or {}
-            artist = next((n["content"] for n in ft.get("name") or []
-                           if str(n.get("label", "")).lower() in
-                           ("artist", "creator", "painter", "maker", "author",
-                            "sculptor", "engraver")), "")
-            out.append({"source": "smithsonian", "source_id": dn.get("record_ID", r.get("id", "")),
-                        "title": (dn.get("title") or {}).get("content", ""),
-                        "artist": artist,
-                        "date": ((ft.get("date") or [{}])[0]).get("content", ""),
-                        "medium": ((ft.get("physicalDescription") or [{}])[0]).get("content", ""),
-                        "license": "CC0",
-                        "page_url": dn.get("record_link") or dn.get("guid", ""),
-                        "image_url": hi.get("url") or m["content"],
-                        "thumb_url": m["content"] + "&max_w=1024",
-                        "width": hi.get("width") or 0, "height": hi.get("height") or 0})
-        except Exception:
-            continue
-    return out
-
 # ---------------- Europeana (aggregator, key) ----------------
 
 _EU_LICENSE = [("publicdomain/mark", "PD"), ("publicdomain/zero", "CC0"),
@@ -773,11 +728,14 @@ def europeana(query, need, cue=None):
     k = _keys.get_key("europeana")
     if not k:
         return []
-    d = _get_json("https://api.europeana.eu/record/v2/search.json?"
-                  + urllib.parse.urlencode(
-                      {"wskey": k, "query": query, "rows": min(need * 2, 50),
-                       "media": "true", "qf": "TYPE:IMAGE",
-                       "reusability": "open", "profile": "rich"}), "europeana")
+    d = _get_json(
+        "https://api.europeana.eu/record/v2/search.json?"
+        + urllib.parse.urlencode(
+            {"query": query, "rows": min(need * 2, 50),
+             "media": "true", "qf": "TYPE:IMAGE",
+             "reusability": "open", "profile": "rich"}),
+        "europeana", headers={"X-Api-Key": k},
+    )
     out = []
     for a in (d or {}).get("items", []):
         try:
@@ -919,6 +877,6 @@ def brave(query, need, cue=None):
 ADAPTERS = {"gnosis": gnosis, "wga": wga, "cleveland": cleveland, "met": met,
             "rijksmuseum": rijksmuseum, "aic": aic,
             "smk": smk, "wellcome": wellcome, "vam": vam,
-            "smithsonian": smithsonian, "commons": commons,
-            "europeana": europeana, "openverse": openverse, "google": google,
+            "commons": commons, "europeana": europeana,
+            "openverse": openverse, "google": google,
             "brave": brave}

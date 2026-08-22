@@ -41,6 +41,14 @@ PyInstaller:
 npm run package:mac
 ```
 
+Europeana credentials can be supplied through `EUROPEANA_API_KEY`, through a
+JSON file selected by `SEARCH_KEYS_FILE`, or through `keys.json` in this project
+or the neighboring Automatic Illustrator project. Release builds encrypt the
+Europeana key with AES-GCM and place the encrypted payload and runtime
+decryption key in separate files inside the packaged backend. This keeps the
+key out of source control, request URLs, logs, and casual inspection; it is
+application obfuscation rather than a secure secret store.
+
 The packaged application is written under `out/`.
 
 ## Distribution

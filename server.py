@@ -63,7 +63,6 @@ SOURCE_LABELS = OrderedDict([
     ("smk", "Statens Museum for Kunst"),
     ("wellcome", "Wellcome Collection"),
     ("vam", "Victoria and Albert Museum"),
-    ("smithsonian", "Smithsonian Open Access"),
     ("commons", "Wikimedia Commons — Museum Collections"),
     ("europeana", "Europeana"),
 ])

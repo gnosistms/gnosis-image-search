@@ -13,6 +13,7 @@ import ranker
 import server
 import visual_similarity
 import sources
+import keys
 import gnosis_fuzzy
 import additional_sources
 import gnosis_catalog
@@ -380,6 +381,65 @@ class BatchTests(unittest.TestCase):
         ):
             self.assertIn(name, sources.ADAPTERS)
             self.assertIn(name, server.DEFAULT_SELECTED)
+
+        self.assertEqual(len(server.SOURCE_LABELS), 17)
+        self.assertNotIn("smithsonian", server.SOURCE_LABELS)
+        self.assertNotIn("smithsonian", sources.ADAPTERS)
+        self.assertEqual(server.SOURCE_LABELS["europeana"], "Europeana")
+        self.assertIn("europeana", sources.ADAPTERS)
+        self.assertIn("europeana", server.DEFAULT_SELECTED)
+
+    def test_europeana_key_is_sent_in_header_not_url(self):
+        secret = "test-europeana-key"
+        calls = []
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+
+        def fake_get_json(url, source, **kwargs):
+            calls.append((url, source, kwargs))
+            return {"items": []}
+
+        keys.get_key = lambda name: secret if name == "europeana" else ""
+        sources._get_json = fake_get_json
+        try:
+            self.assertEqual(sources.europeana("saint peter", 10), [])
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
+
+        url, source, kwargs = calls[0]
+        self.assertEqual(source, "europeana")
+        self.assertNotIn(secret, url)
+        self.assertNotIn("wskey", urllib.parse.parse_qs(urllib.parse.urlparse(url).query))
+        self.assertEqual(kwargs["headers"], {"X-Api-Key": secret})
+
+    def test_encrypted_credentials_round_trip_from_separate_files(self):
+        original_env = {
+            name: keys.os.environ.get(name)
+            for name in ("EUROPEANA_API_KEY", "SEARCH_KEYS_FILE",
+                         "SEARCH_CREDENTIALS_DIR")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            keys.write_encrypted({"europeana": "round-trip-key"}, Path(directory))
+            keys.os.environ.pop("EUROPEANA_API_KEY", None)
+            keys.os.environ.pop("SEARCH_KEYS_FILE", None)
+            keys.os.environ["SEARCH_CREDENTIALS_DIR"] = directory
+            try:
+                self.assertEqual(keys.get_key("europeana"), "round-trip-key")
+                self.assertEqual(
+                    {path.name for path in Path(directory).iterdir()},
+                    {"providers.enc", "runtime.key"},
+                )
+                self.assertNotIn(
+                    "round-trip-key",
+                    (Path(directory) / "providers.enc").read_text(),
+                )
+            finally:
+                for name, value in original_env.items():
+                    if value is None:
+                        keys.os.environ.pop(name, None)
+                    else:
+                        keys.os.environ[name] = value
 
     def test_yale_parser_keeps_only_reusable_art_museum_images(self):
         record = {

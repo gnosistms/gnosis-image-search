@@ -3,6 +3,8 @@ out/
 build/
 .packaging-python/
 .backend-venv/
+keys.json
+vendor/credentials/
 npm-debug.log*
 assets/icon.iconset/
 __pycache__/
