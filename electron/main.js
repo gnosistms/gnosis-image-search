@@ -89,6 +89,18 @@ async function checkForUpdatesAtStartup() {
     autoUpdater.setFeedURL({
       url: `https://update.electronjs.org/${UPDATE_OWNER}/${UPDATE_REPOSITORY}/${process.platform}/${app.getVersion()}`
     });
+    autoUpdater.once('error', (error) => {
+      console.error(`Update failed: ${error.stack || error}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        dialog.showMessageBox(mainWindow, {
+          type: 'error',
+          title: 'Update could not be installed',
+          message: 'Gnosis Image Search could not download or install the update.',
+          detail: 'You can continue using this version and try again the next time the app starts.',
+          buttons: ['OK']
+        });
+      }
+    });
     autoUpdater.once('update-downloaded', () => {
       quitting = true;
       stopBackend();
