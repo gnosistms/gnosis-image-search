@@ -15,8 +15,11 @@ import numpy as np
 from PIL import Image
 
 
+MODEL_KIND = os.environ.get("SEARCH_MODEL_KIND", "siglip").strip().lower()
 MODEL_NAME = os.environ.get("SEARCH_MODEL_NAME", "google/siglip2-large-patch16-256")
 MODEL_CACHE_DIR = os.environ.get("SEARCH_MODEL_CACHE_DIR") or None
+MODEL_ALLOW_DOWNLOAD = os.environ.get("SEARCH_MODEL_ALLOW_DOWNLOAD", "0") == "1"
+MODEL_CACHE_KEY = f"{MODEL_KIND}:{MODEL_NAME}"
 HERE = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("SEARCH_DATA_DIR") or HERE / "data").expanduser()
 CACHE_PATH = DATA_DIR / "image-embeddings.sqlite3"
@@ -34,6 +37,11 @@ _CACHE_LOCK = threading.RLock()
 _MEMORY_CACHE: OrderedDict[str, np.ndarray] = OrderedDict()
 _TEXT_CACHE: OrderedDict[str, np.ndarray] = OrderedDict()
 _MAX_MEMORY_VECTORS = 512
+
+
+def _feature_tensor(value):
+    """Normalize the different feature return types used by CLIP and SigLIP."""
+    return value.pooler_output if hasattr(value, "pooler_output") else value
 
 
 def _image_urls(item: dict) -> list[str]:
@@ -65,20 +73,28 @@ def _load_model() -> bool:
             return True
         try:
             import torch
-            from transformers.models.siglip.modeling_siglip import SiglipModel
-            from transformers.models.siglip.processing_siglip import SiglipProcessor
             from transformers.utils import logging as transformers_logging
+            if MODEL_KIND == "siglip":
+                from transformers.models.siglip.modeling_siglip import SiglipModel
+                from transformers.models.siglip.processing_siglip import SiglipProcessor
+                model_class, processor_class = SiglipModel, SiglipProcessor
+            elif MODEL_KIND == "clip":
+                from transformers.models.clip.modeling_clip import CLIPModel
+                from transformers.models.clip.processing_clip import CLIPProcessor
+                model_class, processor_class = CLIPModel, CLIPProcessor
+            else:
+                raise ValueError(
+                    f"Unsupported model kind {MODEL_KIND!r}; expected 'siglip' or 'clip'."
+                )
             transformers_logging.set_verbosity_error()
             transformers_logging.disable_progress_bar()
-            # Never trigger an implicit model download. Search retains its
-            # metadata-only fallback until this checkpoint exists locally.
-            load_options = {"local_files_only": True}
+            load_options = {"local_files_only": not MODEL_ALLOW_DOWNLOAD}
             if MODEL_CACHE_DIR:
                 load_options["cache_dir"] = MODEL_CACHE_DIR
-            processor = SiglipProcessor.from_pretrained(MODEL_NAME, **load_options)
+            processor = processor_class.from_pretrained(MODEL_NAME, **load_options)
             device = "mps" if torch.backends.mps.is_available() else "cpu"
             dtype = torch.float16 if device == "mps" else torch.float32
-            model = SiglipModel.from_pretrained(
+            model = model_class.from_pretrained(
                 MODEL_NAME, dtype=dtype, **load_options,
             ).to(device)
             model.eval()
@@ -87,7 +103,7 @@ def _load_model() -> bool:
         except Exception as exc:
             __import__("traceback").print_exc()
             print(
-                f"SigLIP model unavailable ({type(exc).__name__}): {exc}",
+                f"{MODEL_KIND.upper()} model unavailable ({type(exc).__name__}): {exc}",
                 file=__import__("sys").stderr,
                 flush=True,
             )
@@ -120,7 +136,7 @@ def _database_vector(url: str) -> np.ndarray | None:
             try:
                 row = connection.execute(
                     "SELECT vector FROM embeddings WHERE url = ? AND model = ?",
-                    (url, MODEL_NAME),
+                    (url, MODEL_CACHE_KEY),
                 ).fetchone()
             finally:
                 connection.close()
@@ -145,7 +161,7 @@ def _store_vectors(vectors: dict[str, np.ndarray]) -> None:
             )
             connection.executemany(
                 "INSERT OR REPLACE INTO embeddings (url, model, vector) VALUES (?, ?, ?)",
-                [(url, MODEL_NAME, vector.astype("float32").tobytes())
+                [(url, MODEL_CACHE_KEY, vector.astype("float32").tobytes())
                  for url, vector in vectors.items()],
             )
             connection.commit()
@@ -208,7 +224,7 @@ def image_vectors(items: list[dict]) -> dict[str, np.ndarray]:
                     images=[downloaded[url] for url in ordered], return_tensors="pt",
                 )
                 inputs = {name: value.to(_DEVICE) for name, value in inputs.items()}
-                encoded = _MODEL.get_image_features(**inputs).pooler_output.float()
+                encoded = _feature_tensor(_MODEL.get_image_features(**inputs)).float()
                 encoded /= encoded.norm(dim=-1, keepdim=True).clamp_min(1e-12)
                 arrays = encoded.cpu().numpy().astype("float32")
             fresh = dict(zip(ordered, arrays))
@@ -235,7 +251,7 @@ def text_vector(query: str) -> np.ndarray | None:
             text=[query], padding="max_length", truncation=True, return_tensors="pt",
         )
         inputs = {name: value.to(_DEVICE) for name, value in inputs.items()}
-        encoded = _MODEL.get_text_features(**inputs).pooler_output.float()
+        encoded = _feature_tensor(_MODEL.get_text_features(**inputs)).float()
         encoded /= encoded.norm(dim=-1, keepdim=True).clamp_min(1e-12)
         vector = encoded[0].cpu().numpy().astype("float32")
     with _CACHE_LOCK:

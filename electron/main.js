@@ -1,39 +1,16 @@
 const { app, autoUpdater, BrowserWindow, dialog, shell } = require('electron');
 const { spawn } = require('node:child_process');
-const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
+const { reconcileModelConfiguration } = require('./model-config');
 
 let backend = null;
 let mainWindow = null;
 let quitting = false;
 const UPDATE_OWNER = 'gnosistms';
 const UPDATE_REPOSITORY = 'gnosis-image-search';
-
-function modelConfiguration() {
-  const configPath = path.join(app.getPath('userData'), 'model-config.json');
-  const defaults = {
-    activeProfile: 'pamela-siglip2-large-v1',
-    profiles: {
-      'pamela-siglip2-large-v1': {
-        checkpoint: 'google/siglip2-large-patch16-256',
-        cacheDirectory: null,
-        axisModel: null,
-        referenceEmbeddings: null
-      }
-    }
-  };
-  try {
-    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    return { configPath, value: { ...defaults, ...saved } };
-  } catch {
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, `${JSON.stringify(defaults, null, 2)}\n`);
-    return { configPath, value: defaults };
-  }
-}
 
 function parseVersion(value) {
   return String(value).replace(/^v/, '').split(/[.-]/).slice(0, 3).map(part => Number(part) || 0);
@@ -178,14 +155,16 @@ async function createApplication() {
   const port = await reservePort();
   const command = backendCommand(port);
   const dataDirectory = path.join(app.getPath('userData'), 'data');
-  const { configPath, value: modelConfig } = modelConfiguration();
+  const { configPath, value: modelConfig } = reconcileModelConfiguration(app.getPath('userData'));
   const activeModel = modelConfig.profiles?.[modelConfig.activeProfile] || {};
   console.log(`Model configuration: ${configPath}`);
   backend = spawn(command.executable, command.args, {
     env: {
       ...process.env,
       SEARCH_DATA_DIR: dataDirectory,
+      SEARCH_MODEL_KIND: activeModel.modelKind || 'siglip',
       SEARCH_MODEL_NAME: activeModel.checkpoint || 'google/siglip2-large-patch16-256',
+      SEARCH_MODEL_ALLOW_DOWNLOAD: '1',
       ...(activeModel.cacheDirectory ? { SEARCH_MODEL_CACHE_DIR: activeModel.cacheDirectory } : {}),
       ...(activeModel.axisModel ? { SEARCH_AXIS_MODEL: activeModel.axisModel } : {}),
       ...(activeModel.referenceEmbeddings ? { SEARCH_PAMELA_EMBEDDINGS: activeModel.referenceEmbeddings } : {}),

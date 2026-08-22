@@ -108,7 +108,10 @@ def fit_bradley_terry(ids: list[str], votes: list[dict]) -> dict[str, float]:
 
     strengths = [1.0] * n
     for _ in range(250):
-        denominators = [0.5 / (value + 1.0) for value in strengths]
+        # One half-win in one virtual contest against a fixed neutral item.
+        # This keeps disconnected images at neutral instead of letting their
+        # unconstrained strengths drift during normalization.
+        denominators = [1.0 / (value + 1.0) for value in strengths]
         for (left, right), count in meetings.items():
             term = count / max(strengths[left] + strengths[right], 1e-12)
             denominators[left] += term

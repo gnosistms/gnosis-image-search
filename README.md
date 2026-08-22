@@ -9,7 +9,9 @@ in parallel and orders results by image size × the learned criterion score.
 The Electron interface supervises a bundled Python/PyTorch search engine. Model
 weights, comparison preferences, indexes, and the embedding cache remain in
 user-owned folders outside the application bundle. Updating the application
-therefore does not download the 3.9 GB SigLIP checkpoint again.
+therefore does not download an unchanged checkpoint again. Managed model
+weights live in an app-owned cache, so an application update can safely replace
+a model and remove its retired files without touching shared Hugging Face data.
 
 On macOS the app creates its writable data under:
 
@@ -55,7 +57,8 @@ macOS updates require a Developer ID-signed and notarized build. See
 ## Tests
 
 ```bash
-python -m unittest discover -v
+python -m pytest -q
+npm run test:model-config
 node --check electron/main.js
 node --check web/app.js
 ```
