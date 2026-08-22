@@ -6,11 +6,18 @@ const net = require('node:net');
 const path = require('node:path');
 const { reconcileModelConfiguration } = require('./model-config');
 
+const APP_NAME = 'Gnosis Image Search';
+// In development Electron otherwise uses the executable name ("Electron") for
+// the macOS application menu. Set this before the app becomes ready so the menu
+// bar and system-provided menu items use the product name in every build mode.
+app.setName(APP_NAME);
+
 let backend = null;
 let mainWindow = null;
 let quitting = false;
 const UPDATE_OWNER = 'gnosistms';
 const UPDATE_REPOSITORY = 'gnosis-image-search';
+const APP_ICON_PATH = path.resolve(__dirname, '..', 'assets', 'icon.png');
 
 function parseVersion(value) {
   return String(value).replace(/^v/, '').split(/[.-]/).slice(0, 3).map(part => Number(part) || 0);
@@ -64,7 +71,7 @@ async function checkForUpdatesAtStartup() {
     });
     if (response.response !== 0) return;
     autoUpdater.setFeedURL({
-      url: `https://update.electronjs.org/${UPDATE_OWNER}/${UPDATE_REPOSITORY}/${process.platform}/${app.getVersion()}`
+      url: `https://update.electronjs.org/${UPDATE_OWNER}/${UPDATE_REPOSITORY}/${process.platform}-${process.arch}/${app.getVersion()}`
     });
     autoUpdater.once('error', (error) => {
       console.error(`Update failed: ${error.stack || error}`);
@@ -182,7 +189,8 @@ async function createApplication() {
   await waitUntilReady(port, backend);
 
   mainWindow = new BrowserWindow({
-    title: 'Gnosis Image Search',
+    title: APP_NAME,
+    icon: APP_ICON_PATH,
     width: 1460,
     height: 980,
     minWidth: 900,
@@ -215,7 +223,10 @@ else {
       mainWindow.focus();
     }
   });
-  app.whenReady().then(createApplication).catch((error) => {
+  app.whenReady().then(() => {
+    if (process.platform === 'darwin') app.dock.setIcon(APP_ICON_PATH);
+    return createApplication();
+  }).catch((error) => {
     dialog.showErrorBox('Gnosis Image Search could not start', error.stack || String(error));
     app.quit();
   });
