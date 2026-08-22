@@ -21,12 +21,13 @@ and its reference embeddings must use the same vector space.
 
 ## Development
 
-Requirements: Node.js 22, Python 3.12, and the Python packages `numpy`, `Pillow`,
-`requests`, `torch`, and `transformers`.
+Requirements: Node.js 22 and Python 3.12. Backend package versions are pinned in
+`requirements-backend.txt`.
 
 ```bash
 nvm use
 npm install
+python -m pip install -r requirements-backend.txt
 npm start
 ```
 

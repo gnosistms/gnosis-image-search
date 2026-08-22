@@ -9,11 +9,11 @@ OUTPUT_DIR="$PROJECT_DIR/build/backend"
 if [[ ! -x "$PYTHON_BIN" ]]; then
   PYTHON_BIN="$PROJECT_DIR/.backend-venv/bin/python"
   python3 -m venv "$PROJECT_DIR/.backend-venv"
-  "$PYTHON_BIN" -m pip install --quiet numpy pillow requests torch transformers
+  "$PYTHON_BIN" -m pip install --quiet -r "$PROJECT_DIR/requirements-backend.txt"
 fi
 
 if ! PYTHONPATH="$PYINSTALLER_DIR" "$PYTHON_BIN" -m PyInstaller --version >/dev/null 2>&1; then
-  "$PYTHON_BIN" -m pip install --quiet --target "$PYINSTALLER_DIR" 'pyinstaller>=6.15,<7'
+  "$PYTHON_BIN" -m pip install --quiet --target "$PYINSTALLER_DIR" 'pyinstaller==6.22.2'
 fi
 rm -rf "$OUTPUT_DIR" "$PROJECT_DIR/build/pyinstaller" "$PROJECT_DIR/build/gnosis-search-engine.spec"
 mkdir -p "$OUTPUT_DIR"

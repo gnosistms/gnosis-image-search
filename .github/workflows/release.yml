@@ -18,8 +18,14 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m venv .backend-venv
-      - run: .backend-venv/bin/python -m pip install numpy pillow requests torch transformers
+      - run: .backend-venv/bin/python -m pip install -r requirements-backend.txt
       - run: npm ci
+      - name: Test application
+        run: |
+          .backend-venv/bin/python -m unittest discover -v
+          node --check electron/main.js
+          node --check web/app.js
+          node --check docs/download.js
       - name: Import Developer ID certificate
         env:
           CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
