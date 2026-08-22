@@ -16,6 +16,26 @@ UA = {"User-Agent": "IllustrationTool/0.2 (personal research; sirhans@gmail.com)
 DELAY = 0.4
 _last_call = {}
 
+
+class EuropeanaAccessError(RuntimeError):
+    """Europeana rejected the shared application credential."""
+
+    def __init__(self, status=0):
+        self.status = int(status or 0)
+        super().__init__("Europeana API key access was limited or blocked.")
+
+
+def _europeana_access_error_message(payload):
+    if not isinstance(payload, dict) or payload.get("success") is not False:
+        return ""
+    message = str(payload.get("error") or "").strip()
+    folded = message.casefold()
+    access_markers = (
+        "api key", "apikey", "authentication", "usage limit", "rate limit",
+        "too many request", "quota", "suspend", "revok", "block", "ip address",
+    )
+    return message if any(marker in folded for marker in access_markers) else ""
+
 def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
     key = hashlib.sha1(url.encode()).hexdigest()[:20]
     cpath = os.path.join(CACHE, f"{source}_{key}.json")
@@ -59,6 +79,12 @@ def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
             json.dump(data, open(cpath, "w"))
             return data
         except urllib.error.HTTPError as e:
+            if source == "europeana" and e.code in (401, 403, 429):
+                # Europeana documents 429 for an application usage limit and
+                # 401 for rejected authentication. A key limited, suspended,
+                # or revoked because of shared-app usage therefore belongs to
+                # the same actionable credential warning in the UI.
+                raise EuropeanaAccessError(e.code) from e
             if e.code in (429, 500, 502, 503):
                 time.sleep(5 * (attempt + 1)); continue
             return None
@@ -275,7 +301,8 @@ def _hf_aic_image(artwork_id):
     with _hf_aic_lock:
         if _hf_aic_row_map is None:
             try:
-                _hf_aic_row_map = json.load(open(_HF_AIC_ROWS_PATH))
+                with open(_HF_AIC_ROWS_PATH, encoding="utf-8") as row_map_file:
+                    _hf_aic_row_map = json.load(row_map_file)
             except Exception:
                 _hf_aic_row_map = {}
         row_index = _hf_aic_row_map.get(str(target))
@@ -736,6 +763,8 @@ def europeana(query, need, cue=None):
              "reusability": "open", "profile": "rich"}),
         "europeana", headers={"X-Api-Key": k},
     )
+    if _europeana_access_error_message(d):
+        raise EuropeanaAccessError()
     out = []
     for a in (d or {}).get("items", []):
         try:

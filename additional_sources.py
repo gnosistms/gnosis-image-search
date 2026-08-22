@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import csv
+import concurrent.futures
 import hashlib
 import html
+from html.parser import HTMLParser
 import io
 import json
 import os
@@ -46,6 +48,355 @@ PARIS_MUSEES_GRAPHQL_URL = (
 )
 MIA_SEARCH_URL = "https://search.artsmia.org"
 MIA_IMAGE_CDN_URL = "https://img.artsmia.org/web_objects_cache"
+UNIVERSAL_COMASONRY_BASE_URL = "https://www.universalfreemasonry.org"
+UNIVERSAL_COMASONRY_GALLERIES_URL = (
+    UNIVERSAL_COMASONRY_BASE_URL + "/en/masonic-galleries"
+)
+UNIVERSAL_COMASONRY_CATALOG_TTL = 7 * 24 * 60 * 60
+_UNIVERSAL_COMASONRY_CATALOG_LOCK = threading.Lock()
+_UNIVERSAL_COMASONRY_REFRESH_LOCK = threading.Lock()
+_UNIVERSAL_COMASONRY_REFRESH_THREAD: threading.Thread | None = None
+
+
+class _UniversalComasonryGalleryParser(HTMLParser):
+    """Extract gallery links and their images from Universal Co-Masonry HTML."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.current_href = ""
+        self.records: list[dict] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        values = {str(name).lower(): str(value or "") for name, value in attrs}
+        if tag.lower() == "a":
+            href = values.get("href", "").replace("\\", "/")
+            self.current_href = href if href.startswith("/en/gallery/") else ""
+            return
+        if tag.lower() != "img" or not self.current_href:
+            return
+        source = values.get("src", "").replace("\\", "/")
+        if "/gallery_images/" not in source.lower():
+            return
+        self.records.append({
+            "page_path": self.current_href,
+            "image_path": source,
+            "title": html.unescape(values.get("alt", "")).strip(),
+        })
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "a":
+            self.current_href = ""
+
+
+class _UniversalComasonryDetailParser(HTMLParser):
+    """Extract the image-specific description without indexing page chrome."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_description = False
+        self.description_span_depth = 0
+        self.description: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        values = {str(name).lower(): str(value or "") for name, value in attrs}
+        if (
+            tag.lower() == "span"
+            and values.get("id", "").casefold() == "galleryimagedescription"
+        ):
+            self.in_description = True
+            self.description_span_depth = 1
+        elif self.in_description and tag.lower() == "span":
+            self.description_span_depth += 1
+
+    def handle_data(self, data: str):
+        if self.in_description:
+            self.description.append(data)
+
+    def handle_endtag(self, tag: str):
+        if self.in_description and tag.lower() == "span":
+            self.description_span_depth -= 1
+            if self.description_span_depth <= 0:
+                self.in_description = False
+
+
+class _UniversalComasonryIndexParser(HTMLParser):
+    """Extract the 36 gallery overview links and their human-readable names."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.current_href = ""
+        self.current_title: list[str] = []
+        self.in_heading = False
+        self.galleries: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        values = {str(name).lower(): str(value or "") for name, value in attrs}
+        if tag.lower() == "a":
+            href = values.get("href", "").replace("\\", "/").rstrip("/")
+            parts = [part for part in href.split("/") if part]
+            self.current_href = href if parts[:2] == ["en", "gallery"] and len(parts) == 3 else ""
+            self.current_title = []
+        elif tag.lower() == "h6" and self.current_href:
+            self.in_heading = True
+
+    def handle_data(self, data: str):
+        if self.in_heading:
+            self.current_title.append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "h6":
+            self.in_heading = False
+        elif tag.lower() == "a":
+            if self.current_href:
+                title = " ".join("".join(self.current_title).split())
+                if title:
+                    self.galleries.append((self.current_href, title))
+            self.current_href = ""
+            self.current_title = []
+            self.in_heading = False
+
+
+def parse_universal_comasonry_gallery_index(document: str) -> list[tuple[str, str]]:
+    parser = _UniversalComasonryIndexParser()
+    parser.feed(document or "")
+    return list(dict.fromkeys(parser.galleries))
+
+
+def parse_universal_comasonry_gallery_page(
+    document: str, gallery_title: str = ""
+) -> list[dict]:
+    """Convert one native gallery page into shared image result records."""
+    parser = _UniversalComasonryGalleryParser()
+    parser.feed(document or "")
+    results = []
+    seen = set()
+    for record in parser.records:
+        image_url = urllib.parse.urljoin(
+            UNIVERSAL_COMASONRY_BASE_URL + "/", record["image_path"]
+        )
+        page_url = urllib.parse.urljoin(
+            UNIVERSAL_COMASONRY_BASE_URL + "/", record["page_path"]
+        )
+        source_id = Path(urllib.parse.urlparse(image_url).path).stem
+        if not source_id or source_id in seen:
+            continue
+        seen.add(source_id)
+        results.append({
+            "source": "universal_comasonry", "source_id": source_id,
+            "title": record["title"] or "Untitled",
+            "artist": "", "date": "", "medium": gallery_title,
+            "license": "Check Universal Co-Masonry copyright and reuse terms",
+            "page_url": page_url, "image_url": image_url,
+            "thumb_url": image_url, "width": 0, "height": 0,
+            "requires_source_visit": True,
+        })
+    return results
+
+
+def parse_universal_comasonry_detail_page(document: str) -> str:
+    """Return the searchable description attached to one gallery image."""
+    parser = _UniversalComasonryDetailParser()
+    parser.feed(document or "")
+    return " ".join("".join(parser.description).split())
+
+
+def _universal_comasonry_fetch_text(url: str, timeout: int = 20) -> str:
+    request = urllib.request.Request(url, headers={
+        "User-Agent": "GnosisImages/1.0 (personal research image search)",
+        "Accept": "text/html,application/xhtml+xml",
+    })
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", "replace")
+
+
+def _universal_comasonry_catalog_path() -> Path:
+    import sources
+    return Path(sources.CACHE) / "universal_comasonry_catalog.json"
+
+
+def _read_universal_comasonry_catalog(
+    path: Path, *, allow_stale: bool = False
+) -> list[dict] | None:
+    try:
+        if (
+            not allow_stale
+            and time.time() - path.stat().st_mtime > UNIVERSAL_COMASONRY_CATALOG_TTL
+        ):
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            return None
+        if any(not isinstance(item, dict) for item in payload):
+            return None
+        return payload
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _universal_comasonry_catalog_needs_refresh(
+    path: Path, records: list[dict]
+) -> tuple[bool, bool]:
+    """Return (needs_refresh, rebuild_index) for a usable disk catalog."""
+    try:
+        stale = time.time() - path.stat().st_mtime > UNIVERSAL_COMASONRY_CATALOG_TTL
+    except OSError:
+        stale = True
+    missing_descriptions = any("search_text" not in item for item in records)
+    return stale or missing_descriptions, stale
+
+
+def _write_universal_comasonry_catalog(path: Path, records: list[dict]) -> None:
+    if not records:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(records, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    except OSError:
+        pass
+
+
+def _build_universal_comasonry_catalog(*, enrich: bool = True) -> list[dict]:
+    index = _universal_comasonry_fetch_text(UNIVERSAL_COMASONRY_GALLERIES_URL)
+    galleries = parse_universal_comasonry_gallery_index(index)
+
+    def fetch_gallery(gallery: tuple[str, str]) -> list[dict]:
+        path, title = gallery
+        document = _universal_comasonry_fetch_text(
+            urllib.parse.urljoin(UNIVERSAL_COMASONRY_BASE_URL + "/", path)
+        )
+        return parse_universal_comasonry_gallery_page(document, title)
+
+    records = []
+    # The source has no search API. Fetch its small set of overview pages in
+    # parallel once, then reuse the disk catalog for a week.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(fetch_gallery, gallery) for gallery in galleries]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                records.extend(future.result())
+            except Exception:
+                continue
+
+    records.sort(key=lambda item: (item["medium"].casefold(), item["title"].casefold()))
+    return _enrich_universal_comasonry_catalog(records) if enrich else records
+
+
+def _enrich_universal_comasonry_catalog(records: list[dict]) -> list[dict]:
+    def fetch_description(item: dict) -> dict:
+        enriched = dict(item)
+        try:
+            document = _universal_comasonry_fetch_text(item["page_url"])
+            description = parse_universal_comasonry_detail_page(document)
+            enriched["search_text"] = description
+            enriched["description"] = description
+        except Exception:
+            enriched["search_text"] = ""
+            enriched["description"] = ""
+        return enriched
+
+    # Descriptive captions live only on the individual image pages. Fetch them
+    # once while building the weekly cache so subject/name searches can find
+    # images whose thumbnail titles use different terminology.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        records = list(executor.map(fetch_description, records))
+    records.sort(key=lambda item: (item["medium"].casefold(), item["title"].casefold()))
+    return records
+
+
+def _refresh_universal_comasonry_catalog(
+    path: Path, records: list[dict], rebuild_index: bool
+) -> None:
+    global _UNIVERSAL_COMASONRY_REFRESH_THREAD
+    try:
+        with _UNIVERSAL_COMASONRY_CATALOG_LOCK:
+            if rebuild_index:
+                records = _build_universal_comasonry_catalog(enrich=False)
+            records = _enrich_universal_comasonry_catalog(records)
+            _write_universal_comasonry_catalog(path, records)
+    except Exception:
+        # The existing catalog remains usable when an offline refresh fails.
+        pass
+    finally:
+        with _UNIVERSAL_COMASONRY_REFRESH_LOCK:
+            _UNIVERSAL_COMASONRY_REFRESH_THREAD = None
+
+
+def _schedule_universal_comasonry_refresh(
+    path: Path, records: list[dict], *, rebuild_index: bool
+) -> None:
+    """Refresh a usable catalog in the background without delaying search."""
+    global _UNIVERSAL_COMASONRY_REFRESH_THREAD
+    with _UNIVERSAL_COMASONRY_REFRESH_LOCK:
+        if (
+            _UNIVERSAL_COMASONRY_REFRESH_THREAD is not None
+            and _UNIVERSAL_COMASONRY_REFRESH_THREAD.is_alive()
+        ):
+            return
+        thread = threading.Thread(
+            target=_refresh_universal_comasonry_catalog,
+            args=(path, [dict(item) for item in records], rebuild_index),
+            name="universal-comasonry-catalog-refresh",
+            daemon=True,
+        )
+        _UNIVERSAL_COMASONRY_REFRESH_THREAD = thread
+        thread.start()
+
+
+def _load_universal_comasonry_catalog() -> list[dict]:
+    path = _universal_comasonry_catalog_path()
+    cached = _read_universal_comasonry_catalog(path, allow_stale=True)
+    if cached is not None:
+        needs_refresh, rebuild_index = _universal_comasonry_catalog_needs_refresh(
+            path, cached
+        )
+        if needs_refresh:
+            _schedule_universal_comasonry_refresh(
+                path, cached, rebuild_index=rebuild_index
+            )
+        return cached
+    with _UNIVERSAL_COMASONRY_CATALOG_LOCK:
+        cached = _read_universal_comasonry_catalog(path, allow_stale=True)
+        if cached is not None:
+            return cached
+        # A brand-new installation only needs the 36 overview pages before it
+        # can search. The much larger detail-page crawl is completed in the
+        # background and atomically replaces this immediately usable catalog.
+        records = _build_universal_comasonry_catalog(enrich=False)
+        _write_universal_comasonry_catalog(path, records)
+    _schedule_universal_comasonry_refresh(path, records, rebuild_index=False)
+    return records
+
+
+def _universal_comasonry_match_score(query: str, item: dict) -> tuple[float, str]:
+    phrase = " ".join(query.casefold().split())
+    haystack = " ".join((
+        str(item.get("title") or ""), str(item.get("medium") or ""),
+        str(item.get("page_url") or "").replace("-", " "),
+        str(item.get("search_text") or ""),
+    )).casefold()
+    tokens = [token for token in re.findall(r"[\w']+", phrase) if len(token) > 1]
+    matched = sum(token in haystack for token in tokens)
+    if phrase and phrase in haystack:
+        return 100.0 + len(tokens), str(item.get("title") or "").casefold()
+    if not tokens or not matched:
+        return 0.0, str(item.get("title") or "").casefold()
+    return matched / len(tokens), str(item.get("title") or "").casefold()
+
+
+def universal_comasonry(query: str, need: int, cue=None) -> list[dict]:
+    """Search Universal Co-Masonry's native art-gallery catalog."""
+    ranked = []
+    for item in _load_universal_comasonry_catalog():
+        score, title = _universal_comasonry_match_score(query, item)
+        if score:
+            ranked.append((score, title, item))
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    return [row[2] for row in ranked[:max(need * 2, need)]]
 
 
 def _clean_url(value: str) -> str:
@@ -161,8 +512,10 @@ def parse_getty_response(data: dict, need: int) -> list[dict]:
                 "license": "CC0",
                 "page_url": GETTY_COLLECTION_URL + slug if slug else "",
                 "image_url": f"{image_base}/full/max/0/default.jpg",
-                "thumb_url": str(manifest.get("thumb") or "")
-                    or f"{image_base}/full/!600,600/0/default.jpg",
+                # Getty's manifest thumbnail is often only large enough for a
+                # 1x card. Request a bounded IIIF derivative that remains crisp
+                # at the gallery's maximum width on a 2x display.
+                "thumb_url": f"{image_base}/full/!1200,1200/0/default.jpg",
                 "width": 0, "height": 0,
             })
         except (KeyError, TypeError, ValueError):
@@ -781,8 +1134,11 @@ class NGACatalog:
                 "license": "NGA Open Access",
                 "page_url": f'https://www.nga.gov/artworks/{row["objectid"]}',
                 "image_url": f"{iiif}/full/full/0/default.jpg",
-                "thumb_url": str(row["thumburl"] or "")
-                    or f"{iiif}/full/!1024,1024/0/default.jpg",
+                # NGA's published iiifthumburl is only 200 px wide. That is
+                # visibly soft in our 520 px tiles (and worse on HiDPI
+                # displays), so request a bounded preview from the same IIIF
+                # service instead of upscaling the catalog thumbnail.
+                "thumb_url": f"{iiif}/full/!1024,1024/0/default.jpg",
                 "width": _as_int(row["width"]), "height": _as_int(row["height"]),
                 "description": str(row["description"] or ""),
             })

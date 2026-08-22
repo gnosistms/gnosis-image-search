@@ -38,7 +38,7 @@
           <img src="/gnosis-caduceus.svg" alt="">
           <span>Gnosis Images</span>
         </div>
-        <h1>Search the world's best<br>museum websites.</h1>
+        <h1>Search the best fine-art<br>image collections.</h1>
         <p>Get high resolution images with creative commons licenses—ready to illustrate beautiful books.</p>
         <form id="hero-search-form" class="hero-search-form">
           <label class="sr-only" for="hero-query">Search images</label>
@@ -51,16 +51,16 @@
       </div>
       <div class="hero-artwall" aria-label="Religious artworks from the J. Paul Getty Museum">
         <figure class="hero-art hero-art-one">
-          <img src="https://media.getty.edu/iiif/image/f7cdfe9f-6fd2-4d55-bd34-733d8dad69b2/full/!600,600/0/default.jpg" alt="The Annunciation, about 1390–1395">
+          <img src="https://media.getty.edu/iiif/image/f7cdfe9f-6fd2-4d55-bd34-733d8dad69b2/full/!1200,1200/0/default.jpg" alt="The Annunciation, about 1390–1395">
         </figure>
         <figure class="hero-art hero-art-two">
-          <img src="https://media.getty.edu/iiif/image/3cc5add5-126f-4aa0-ad58-4c96cbcc9ae1/full/!600,600/0/default.jpg" alt="The Annunciation, about 1660–1665">
+          <img src="https://media.getty.edu/iiif/image/3cc5add5-126f-4aa0-ad58-4c96cbcc9ae1/full/!1200,1200/0/default.jpg" alt="The Annunciation, about 1660–1665">
         </figure>
         <figure class="hero-art hero-art-three">
-          <img src="https://media.getty.edu/iiif/image/a0f7035c-b766-4e01-ae46-a8fff7c4136b/full/!600,600/0/default.jpg" alt="Madonna and Child with Musical Angels, about 1410">
+          <img src="https://media.getty.edu/iiif/image/a0f7035c-b766-4e01-ae46-a8fff7c4136b/full/!1200,1200/0/default.jpg" alt="Madonna and Child with Musical Angels, about 1410">
         </figure>
         <figure class="hero-art hero-art-four">
-          <img src="https://media.getty.edu/iiif/image/39078720-93f5-4034-a98f-b300ad2f311e/full/!600,600/0/default.jpg" alt="Adoration of the Magi, about 1520">
+          <img src="https://media.getty.edu/iiif/image/39078720-93f5-4034-a98f-b300ad2f311e/full/!1200,1200/0/default.jpg" alt="Adoration of the Magi, about 1520">
         </figure>
       </div>
     </section>
@@ -98,6 +98,16 @@
       <div id="similar-grid" class="similar-grid"></div>
     </section>
   </aside>
+
+  <dialog id="developer-warning" class="warning-dialog" aria-labelledby="developer-warning-title">
+    <div class="warning-icon" aria-hidden="true">!</div>
+    <h2 id="developer-warning-title">Europeana access needs attention</h2>
+    <p>Europeana has limited or blocked the app’s API key. This can happen when too many requests use the same key, or when the key is shared across more IP addresses than Europeana allows.</p>
+    <p>Please tell the developer that the Europeana key needs to be fixed or replaced with a suitable Project API key.</p>
+    <div class="warning-actions">
+      <button id="close-developer-warning" type="button">OK</button>
+    </div>
+  </dialog>
 
   <template id="tile-template">
     <button class="image-tile" type="button">

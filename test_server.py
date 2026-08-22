@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 import tempfile
@@ -142,6 +143,12 @@ class SessionTests(unittest.TestCase):
     def test_gnosis_is_optional_and_selectable(self):
         self.assertEqual(server.parse_sources("met,gnosis"), ["met", "gnosis"])
         self.assertEqual(server.parse_sources("met"), ["met"])
+
+    def test_universal_comasonry_is_a_selectable_collection(self):
+        self.assertEqual(
+            server.parse_sources("universal_comasonry"),
+            ["universal_comasonry"],
+        )
 
     def test_every_collection_is_selected_by_default(self):
         self.assertEqual(tuple(server.SOURCE_LABELS), server.DEFAULT_SELECTED)
@@ -375,14 +382,21 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(
             server.SOURCE_LABELS["mia"], "Minneapolis Institute of Art"
         )
+        self.assertEqual(
+            server.SOURCE_LABELS["universal_comasonry"],
+            "Universal Co-Masonry Galleries",
+        )
         for name in (
             "getty", "loc", "nga", "harvard", "yale", "paris_musees",
-            "mia", "commons",
+            "mia", "commons", "universal_comasonry",
         ):
             self.assertIn(name, sources.ADAPTERS)
             self.assertIn(name, server.DEFAULT_SELECTED)
 
-        self.assertEqual(len(server.SOURCE_LABELS), 17)
+        self.assertEqual(len(server.SOURCE_LABELS), 18)
+        self.assertNotIn("getty_alchemy", server.SOURCE_LABELS)
+        self.assertNotIn("getty_alchemy", sources.ADAPTERS)
+        self.assertNotIn("getty_alchemy", server.DEFAULT_SELECTED)
         self.assertNotIn("smithsonian", server.SOURCE_LABELS)
         self.assertNotIn("smithsonian", sources.ADAPTERS)
         self.assertEqual(server.SOURCE_LABELS["europeana"], "Europeana")
@@ -412,6 +426,71 @@ class BatchTests(unittest.TestCase):
         self.assertNotIn(secret, url)
         self.assertNotIn("wskey", urllib.parse.parse_qs(urllib.parse.urlparse(url).query))
         self.assertEqual(kwargs["headers"], {"X-Api-Key": secret})
+
+    def test_europeana_rate_limit_becomes_an_access_error(self):
+        original_urlopen = sources.urllib.request.urlopen
+
+        def reject(_request, timeout=0):
+            raise urllib.error.HTTPError(
+                "https://api.europeana.eu/record/v2/search.json",
+                429, "Too Many Requests", {}, None,
+            )
+
+        sources.urllib.request.urlopen = reject
+        try:
+            with self.assertRaises(sources.EuropeanaAccessError) as raised:
+                sources._get_json(
+                    "https://api.europeana.eu/record/v2/search.json?query=limit-test",
+                    "europeana", ttl_ok=False,
+                )
+        finally:
+            sources.urllib.request.urlopen = original_urlopen
+        self.assertEqual(raised.exception.status, 429)
+
+    def test_europeana_access_error_is_exposed_as_a_safe_ui_alert(self):
+        def blocked(_query, _need):
+            raise sources.EuropeanaAccessError(429)
+
+        group = server.search_batch(
+            "europeana", "saint peter", 0,
+            adapters={"europeana": blocked},
+        )
+        self.assertEqual(group["alert"], {
+            "code": "europeana_key_access", "status": 429,
+        })
+        session = server.SearchSession("saint peter", ["europeana"])
+        snapshot = session.merge_batch(group)
+        self.assertEqual(
+            snapshot["source_alerts"]["europeana"]["code"],
+            "europeana_key_access",
+        )
+
+    def test_europeana_json_authentication_failure_becomes_an_access_error(self):
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+        keys.get_key = lambda name: "test-key"
+        sources._get_json = lambda *args, **kwargs: {
+            "success": False, "error": "Invalid API key",
+        }
+        try:
+            with self.assertRaises(sources.EuropeanaAccessError):
+                sources.europeana("saint peter", 10)
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
+
+    def test_europeana_non_access_json_error_does_not_show_key_warning(self):
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+        keys.get_key = lambda name: "test-key"
+        sources._get_json = lambda *args, **kwargs: {
+            "success": False, "error": "Invalid query syntax",
+        }
+        try:
+            self.assertEqual(sources.europeana("(", 10), [])
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
 
     def test_encrypted_credentials_round_trip_from_separate_files(self):
         original_env = {
@@ -556,6 +635,192 @@ class BatchTests(unittest.TestCase):
         self.assertEqual([item["source_id"] for item in items], ["File:Museum work.jpg"])
         self.assertEqual(items[0]["artist"], "Example Artist")
 
+    def test_universal_comasonry_parses_gallery_index_and_images(self):
+        index = """
+        <a href="/en/gallery/secret-teachings">
+          <h6>The Secret Teachings Of All Ages</h6>
+          <img src="/Assets/Images/Gallery_Background_Images/cover.jpg">
+        </a>
+        <a href="/en/article/not-a-gallery"><h6>Ignore me</h6></a>
+        """
+        self.assertEqual(
+            additional_sources.parse_universal_comasonry_gallery_index(index),
+            [("/en/gallery/secret-teachings", "The Secret Teachings Of All Ages")],
+        )
+        gallery = r"""
+        <a href="/en/gallery/secret-teachings/solomon-shedd">
+          <p><img src="\Assets\Images\Gallery_Images\image-15.jpg"
+             alt="PLATE 15: Solomon &amp; the Shedds"></p>
+        </a>
+        <img src="/assets/images/logo.png" alt="Ignore me">
+        """
+        items = additional_sources.parse_universal_comasonry_gallery_page(
+            gallery, "The Secret Teachings Of All Ages"
+        )
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["source"], "universal_comasonry")
+        self.assertEqual(items[0]["title"], "PLATE 15: Solomon & the Shedds")
+        self.assertEqual(items[0]["source_id"], "image-15")
+        self.assertEqual(
+            items[0]["image_url"],
+            "https://www.universalfreemasonry.org/Assets/Images/"
+            "Gallery_Images/image-15.jpg",
+        )
+        self.assertTrue(items[0]["requires_source_visit"])
+
+    def test_universal_comasonry_parses_image_detail_description(self):
+        detail = """
+        <nav><span>Adam in an unrelated menu</span></nav>
+        <span id="GalleryImageDescription"><p>
+          Such is <em>Adam Kadman</em>, the primordial Adam of the Kabalists.
+        </p></span>
+        <footer><p>Generic Masonic gallery text</p></footer>
+        """
+        self.assertEqual(
+            additional_sources.parse_universal_comasonry_detail_page(detail),
+            "Such is Adam Kadman, the primordial Adam of the Kabalists.",
+        )
+
+    def test_universal_comasonry_catalog_enriches_images_from_detail_pages(self):
+        documents = {
+            additional_sources.UNIVERSAL_COMASONRY_GALLERIES_URL: """
+                <a href="/en/gallery/secret-teachings">
+                  <h6>The Secret Teachings Of All Ages</h6>
+                </a>
+            """,
+            "https://www.universalfreemasonry.org/en/gallery/secret-teachings": """
+                <a href="/en/gallery/secret-teachings/grand-man">
+                  <img src="/Assets/Images/Gallery_Images/grand-man.jpg"
+                       alt="PLATE 25: Grand Man of The Zohar">
+                </a>
+            """,
+            "https://www.universalfreemasonry.org/en/gallery/secret-teachings/grand-man": """
+                <span id="GalleryImageDescription">
+                  Such is <em>Adam Kadman</em>, the primordial Adam.
+                </span>
+            """,
+        }
+        original = additional_sources._universal_comasonry_fetch_text
+        additional_sources._universal_comasonry_fetch_text = documents.__getitem__
+        try:
+            items = additional_sources._build_universal_comasonry_catalog()
+        finally:
+            additional_sources._universal_comasonry_fetch_text = original
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["search_text"],
+                         "Such is Adam Kadman, the primordial Adam.")
+        self.assertEqual(items[0]["description"], items[0]["search_text"])
+
+    def test_universal_comasonry_reads_legacy_catalog_without_detail_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "universal_comasonry_catalog.json"
+            path.write_text('[{"title":"Legacy record"}]', encoding="utf-8")
+            self.assertEqual(
+                additional_sources._read_universal_comasonry_catalog(path),
+                [{"title": "Legacy record"}],
+            )
+
+    def test_universal_comasonry_returns_legacy_catalog_before_refreshing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "universal_comasonry_catalog.json"
+            legacy = [{"title": "Legacy record", "medium": "Gallery"}]
+            path.write_text(
+                '[{"title":"Legacy record","medium":"Gallery"}]',
+                encoding="utf-8",
+            )
+            scheduled = []
+            original_path = additional_sources._universal_comasonry_catalog_path
+            original_schedule = additional_sources._schedule_universal_comasonry_refresh
+            original_build = additional_sources._build_universal_comasonry_catalog
+            additional_sources._universal_comasonry_catalog_path = lambda: path
+            additional_sources._schedule_universal_comasonry_refresh = (
+                lambda target, records, *, rebuild_index: scheduled.append(
+                    (target, records, rebuild_index)
+                )
+            )
+            additional_sources._build_universal_comasonry_catalog = (
+                lambda **_kwargs: self.fail("legacy cache should not block on a rebuild")
+            )
+            try:
+                records = additional_sources._load_universal_comasonry_catalog()
+            finally:
+                additional_sources._universal_comasonry_catalog_path = original_path
+                additional_sources._schedule_universal_comasonry_refresh = original_schedule
+                additional_sources._build_universal_comasonry_catalog = original_build
+            self.assertEqual(records, legacy)
+            self.assertEqual(scheduled, [(path, legacy, False)])
+
+    def test_universal_comasonry_cold_cache_defers_detail_enrichment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "universal_comasonry_catalog.json"
+            base = [{"title": "Indexed record", "medium": "Gallery"}]
+            builds = []
+            scheduled = []
+            original_path = additional_sources._universal_comasonry_catalog_path
+            original_schedule = additional_sources._schedule_universal_comasonry_refresh
+            original_build = additional_sources._build_universal_comasonry_catalog
+            additional_sources._universal_comasonry_catalog_path = lambda: path
+            additional_sources._schedule_universal_comasonry_refresh = (
+                lambda target, records, *, rebuild_index: scheduled.append(
+                    (target, records, rebuild_index)
+                )
+            )
+            additional_sources._build_universal_comasonry_catalog = (
+                lambda *, enrich=True: builds.append(enrich) or base
+            )
+            try:
+                records = additional_sources._load_universal_comasonry_catalog()
+            finally:
+                additional_sources._universal_comasonry_catalog_path = original_path
+                additional_sources._schedule_universal_comasonry_refresh = original_schedule
+                additional_sources._build_universal_comasonry_catalog = original_build
+            self.assertEqual(records, base)
+            self.assertEqual(builds, [False])
+            self.assertEqual(scheduled, [(path, base, False)])
+            self.assertEqual(
+                additional_sources._read_universal_comasonry_catalog(path), base
+            )
+
+    def test_universal_comasonry_search_uses_cached_catalog(self):
+        original = additional_sources._load_universal_comasonry_catalog
+        additional_sources._load_universal_comasonry_catalog = lambda: [{
+            "title": "PLATE 15: Solomon and the Shedds",
+            "medium": "The Secret Teachings Of All Ages",
+            "page_url": "https://www.universalfreemasonry.org/en/gallery/"
+                        "secret-teachings/solomon-shedd",
+            "search_text": "",
+        }, {
+            "title": "The Zodiacal Egg", "medium": "Another gallery",
+            "page_url": "https://www.universalfreemasonry.org/en/gallery/other/egg",
+            "search_text": "",
+        }]
+        try:
+            items = additional_sources.universal_comasonry("king solomon", 10)
+        finally:
+            additional_sources._load_universal_comasonry_catalog = original
+        self.assertEqual([item["title"] for item in items], [
+            "PLATE 15: Solomon and the Shedds"
+        ])
+
+    def test_universal_comasonry_searches_detail_description(self):
+        original = additional_sources._load_universal_comasonry_catalog
+        additional_sources._load_universal_comasonry_catalog = lambda: [{
+            "title": "PLATE 25: Grand Man of The Zohar",
+            "medium": "The Secret Teachings Of All Ages",
+            "page_url": "https://www.universalfreemasonry.org/en/gallery/"
+                        "secret-teachings/grand-man",
+            "search_text": "Such is Adam Kadman, the primordial Adam of the Kabalists.",
+            "description": "Such is Adam Kadman, the primordial Adam of the Kabalists.",
+        }]
+        try:
+            items = additional_sources.universal_comasonry("adam kadman", 10)
+        finally:
+            additional_sources._load_universal_comasonry_catalog = original
+        self.assertEqual(
+            [item["title"] for item in items],
+            ["PLATE 25: Grand Man of The Zohar"],
+        )
+
     def test_getty_parser_accepts_only_cc0_and_builds_full_iiif_url(self):
         payload = {"data": [{
             "id": "object/c88b3df0-de91-4f5b-a9ef-7b2b9a6d8abb",
@@ -582,6 +847,12 @@ class BatchTests(unittest.TestCase):
             items[0]["image_url"],
             "https://media.getty.edu/iiif/image/"
             "8c255d80-7382-46db-9fa8-892c0d37247e/full/max/0/default.jpg",
+        )
+        self.assertEqual(
+            items[0]["thumb_url"],
+            "https://media.getty.edu/iiif/image/"
+            "8c255d80-7382-46db-9fa8-892c0d37247e/"
+            "full/!1200,1200/0/default.jpg",
         )
         self.assertEqual(
             items[0]["page_url"],
@@ -691,6 +962,10 @@ class BatchTests(unittest.TestCase):
         self.assertEqual([item["source_id"] for item in results], ["7"])
         self.assertEqual((results[0]["width"], results[0]["height"]), (3000, 2000))
         self.assertEqual(results[0]["license"], "NGA Open Access")
+        self.assertEqual(
+            results[0]["thumb_url"],
+            "https://api.nga.gov/iiif/a/full/!1024,1024/0/default.jpg",
+        )
 
     def test_gnosis_catalog_unchanged_probe_skips_record_download(self):
         catalog = gnosis_catalog.GnosisCatalog("/tmp/nonexistent-gnosis-probe.json")
@@ -907,6 +1182,12 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(item["full_resolution_url"],
                          "https://www.artic.edu/artworks/120172")
 
+    def test_aic_hugging_face_row_index_is_packaged(self):
+        row_map = json.loads(Path(sources._HF_AIC_ROWS_PATH).read_text())
+        self.assertGreater(len(row_map), 50_000)
+        self.assertEqual(row_map["3675"], 1195)
+        self.assertEqual(row_map["114932"], 41409)
+
     def test_aic_starts_commons_and_hugging_face_before_waiting(self):
         response = {"data": [{
             "id": 42, "title": "Work", "image_id": "abc",
@@ -1033,6 +1314,105 @@ class BatchTests(unittest.TestCase):
         self.assertEqual([item["source_id"] for item in group["results"]],
                          [str(index) for index in range(10, 20)])
         self.assertFalse(group["exhausted"])
+
+    def test_stream_round_starts_every_collection_at_once_with_preview_batches(self):
+        selected = ["met", "nga", "getty", "cleveland"]
+        session = server.SearchSession("light", selected)
+        started = []
+        started_lock = threading.Lock()
+        all_started = threading.Event()
+        release = threading.Event()
+
+        def batch_search(
+            source_name, query, offset, batch_size, cancelled=None,
+            resolve_dimensions=True,
+        ):
+            with started_lock:
+                started.append((source_name, offset, batch_size))
+                if len(started) == len(selected):
+                    all_started.set()
+            release.wait(2)
+            return {
+                "source": source_name, "results": [], "error": "",
+                "offset": offset, "count": 0, "exhausted": True,
+            }
+
+        events = []
+        consumer = threading.Thread(
+            target=lambda: events.extend(server.stream_search_round(session, batch_search)),
+        )
+        consumer.start()
+        try:
+            self.assertTrue(all_started.wait(1))
+            self.assertEqual({item[0] for item in started}, set(selected))
+            self.assertEqual({item[2] for item in started}, {1})
+        finally:
+            release.set()
+            consumer.join(2)
+        self.assertFalse(consumer.is_alive())
+        self.assertEqual(events[-1]["type"], "complete")
+
+    def test_stream_round_grows_from_one_to_two_to_four_then_ten(self):
+        schedule = (
+            (0, 0, 0, 1),
+            (1, 1, 1, 2),
+            (2, 3, 2, 4),
+            (3, 7, 4, server.BATCH_SIZE),
+        )
+        for rounds, fetched, previous_count, expected_size in schedule:
+            with self.subTest(rounds=rounds):
+                session = server.SearchSession("light", ["met"])
+                session.source_states["met"].update(
+                    fetched=fetched,
+                    rounds=rounds,
+                    last_batch_count=previous_count,
+                )
+                calls = []
+
+                def batch_search(
+                    source_name, query, offset, batch_size, cancelled=None,
+                    resolve_dimensions=True,
+                ):
+                    calls.append((offset, batch_size))
+                    return {
+                        "source": source_name, "results": [], "error": "",
+                        "offset": offset, "count": 0, "exhausted": True,
+                    }
+
+                list(server.stream_search_round(session, batch_search))
+                self.assertEqual(calls, [(fetched, expected_size)])
+
+    def test_stream_shows_metadata_before_dimension_and_model_enrichment(self):
+        session = server.SearchSession("light", ["met"])
+        item = server.normalize_result(result(
+            "met", "Immediate", "fast", width=0, height=0,
+        ))
+        enrichment_calls = []
+        original_enrichment = server.score_search_results
+
+        def batch_search(
+            source_name, query, offset, batch_size, cancelled=None,
+            resolve_dimensions=True,
+        ):
+            self.assertFalse(resolve_dimensions)
+            return {
+                "source": source_name, "results": [item], "error": "",
+                "offset": offset, "count": 1, "exhausted": False,
+            }
+
+        server.score_search_results = lambda query, items: (
+            enrichment_calls.append(list(items)) or items
+        )
+        events = server.stream_search_round(session, batch_search)
+        try:
+            first = next(events)
+            self.assertEqual(first["type"], "snapshot")
+            self.assertEqual(first["snapshot"]["results"][0]["title"], "Immediate")
+            self.assertEqual(enrichment_calls, [])
+        finally:
+            events.close()
+            server.score_search_results = original_enrichment
+
     def test_identical_live_batches_are_coalesced_and_cached(self):
         original = sources.ADAPTERS["met"]
         calls = []

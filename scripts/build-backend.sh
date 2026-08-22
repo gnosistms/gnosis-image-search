@@ -62,6 +62,7 @@ PYINSTALLER_CONFIG_DIR="$PROJECT_DIR/build/pyinstaller-config" PYTHONPATH="$PYIN
   --add-data "$PROJECT_DIR/data/pamela/siglip2-base-patch16-256.npz:./data/pamela" \
   --add-data "$PROJECT_DIR/data/gnosis-media.json:./data" \
   --add-data "$PROJECT_DIR/data/nga-search.db:./data" \
+  --add-data "$PROJECT_DIR/vendor/aic_hf_rows.json:." \
   "$PROJECT_DIR/server.py"
 
 PYTHONPATH="$PYINSTALLER_DIR" "$PYTHON_BIN" \

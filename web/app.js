@@ -28,6 +28,8 @@ const similarStatus = document.querySelector('#similar-status');
 const alternateSection = document.querySelector('#alternate-section');
 const alternateGrid = document.querySelector('#alternate-grid');
 const alternateStatus = document.querySelector('#alternate-status');
+const developerWarning = document.querySelector('#developer-warning');
+const closeDeveloperWarning = document.querySelector('#close-developer-warning');
 
 if (new URLSearchParams(location.search).has('desktop')) {
   document.body.classList.add('desktop-app');
@@ -43,7 +45,11 @@ let detailImageRequest = 0;
 const galleryTiles = new Map();
 const panelItems = new Map();
 const searchControllers = new Set();
-const MAX_PARALLEL_COLLECTIONS = 6;
+const shownSourceAlerts = new Set();
+// Cold museum searches can legitimately include API retries and image-header
+// probes. Keep this below the reverse proxy's 130-second response timeout, but
+// do not abort while the backend is still within its normal request budget.
+const SOURCE_BATCH_TIMEOUT_MS = 120000;
 
 function selectedSources() {
   return [...sourceOptions.querySelectorAll('input:checked')].map(input => input.value);
@@ -92,6 +98,20 @@ function setPlainStatus(text) {
   statusLine.textContent = text;
 }
 
+function setSearchBusy(busy) {
+  statusLine.classList.toggle('is-searching', busy);
+  statusLine.setAttribute('aria-busy', String(busy));
+}
+
+function showSourceAlerts(alerts = {}) {
+  for (const alert of Object.values(alerts)) {
+    if (alert.code !== 'europeana_key_access' || shownSourceAlerts.has(alert.code)) continue;
+    shownSourceAlerts.add(alert.code);
+    if (typeof developerWarning.showModal === 'function') developerWarning.showModal();
+    else developerWarning.setAttribute('open', '');
+  }
+}
+
 async function getJson(url, options = {}) {
   const response = await fetch(url, options);
   const body = await response.text();
@@ -107,21 +127,6 @@ async function getJson(url, options = {}) {
     throw error;
   }
   return data;
-}
-
-async function mapWithConcurrency(items, limit, mapper) {
-  const results = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await mapper(items[index]);
-    }
-  }
-  await Promise.all(
-    Array.from({length: Math.min(limit, items.length)}, () => worker()),
-  );
-  return results;
 }
 
 function collectionLabel(source) {
@@ -201,8 +206,8 @@ function imageCandidates(item, { detail = false } = {}) {
     ? `/api/image/detail?session=${encodeURIComponent(currentSession)}&id=${encodeURIComponent(item.id)}`
     : '';
   const normal = detail
-    ? [cachedDetail, item.image_url, item.thumb_url, item.placeholder_url]
-    : [item.thumb_url, item.image_url, item.placeholder_url];
+    ? [cachedDetail, item.image_url, item.thumb_url]
+    : [item.thumb_url, item.image_url];
   const aicProxy = item.source === 'aic'
     && ['huggingface', 'wayback'].includes(item.image_delivery)
     && currentSession
@@ -212,13 +217,14 @@ function imageCandidates(item, { detail = false } = {}) {
     ? `/api/image/harvard?session=${encodeURIComponent(currentSession)}&id=${encodeURIComponent(item.id)}${detail ? '&detail=1' : ''}`
     : '';
   // Safari receives mirror previews through our same-origin endpoint with an
-  // explicit image MIME type. The signed source URL and tiny API LQIP remain
-  // fallbacks if the bounded proxy cannot retrieve a preview.
+  // explicit image MIME type. The signed source URL remains a fallback if the
+  // bounded proxy cannot retrieve a preview; tiny API LQIPs are intentionally
+  // excluded because they otherwise look like permanently blurred results.
   const aic = detail
-    ? [cachedDetail, aicProxy, item.image_url, item.thumb_url, item.placeholder_url]
-    : [aicProxy, item.thumb_url, item.placeholder_url];
+    ? [cachedDetail, aicProxy, item.image_url, item.thumb_url]
+    : [aicProxy, item.thumb_url, item.image_url];
   const harvard = detail
-    ? [cachedDetail, harvardProxy, item.image_url, item.thumb_url, item.placeholder_url]
+    ? [cachedDetail, harvardProxy, item.image_url, item.thumb_url]
     : [harvardProxy, ...normal];
   const selected = item.source === 'aic' ? aic
     : item.source === 'harvard' ? harvard
@@ -235,9 +241,13 @@ function applyImageSources(image, item, { detail = false } = {}) {
   image.onerror = () => {
     index += 1;
     if (index < candidates.length) image.src = candidates[index];
-    else image.closest('.image-tile')?.classList.add('image-unavailable');
+    else {
+      image.removeAttribute('src');
+      image.closest('.image-tile')?.classList.add('image-unavailable');
+    }
   };
   if (candidates.length) image.src = candidates[0];
+  else image.closest('.image-tile')?.classList.add('image-unavailable');
 }
 
 function setDetailImageLoading(loading) {
@@ -323,8 +333,28 @@ function createTile(item) {
   return tile;
 }
 
+function setGallerySearching(searching) {
+  const existing = gallery.querySelector('.gallery-searching');
+  if (!searching) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const indicator = document.createElement('div');
+  indicator.className = 'gallery-searching';
+  indicator.setAttribute('role', 'status');
+  const spinner = document.createElement('span');
+  spinner.className = 'gallery-searching-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  label.textContent = 'Searching…';
+  indicator.append(spinner, label);
+  gallery.append(indicator);
+}
+
 function renderGallery(items) {
   currentResults = items;
+  if (items.length) setGallerySearching(false);
   const retained = new Set(items.map(item => item.id));
   for (const [id, tile] of galleryTiles) {
     if (!retained.has(id)) {
@@ -348,6 +378,7 @@ function renderGallery(items) {
 function applySnapshot(snapshot, sequence) {
   if (sequence !== currentSearchSequence || snapshot.revision < currentRevision) return;
   currentRevision = snapshot.revision;
+  showSourceAlerts(snapshot.source_alerts);
   renderGallery(snapshot.results);
   const unavailable = Object.keys(snapshot.source_errors);
   const errors = unavailable.length;
@@ -380,53 +411,53 @@ function applySnapshot(snapshot, sequence) {
   statusLine.setAttribute('aria-label', [resultText, progressText, errorText].filter(Boolean).join(' · '));
 }
 
-async function searchSourceBatch(source, offset, sequence, sessionId) {
-  if (sequence !== currentSearchSequence) return {source, ok: false, ignored: true};
+async function streamSearchRound(sequence, sessionId) {
+  if (sequence !== currentSearchSequence) return null;
   const controller = new AbortController();
   searchControllers.add(controller);
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, source === 'aic' ? 45000 : 25000);
+  const timer = setTimeout(() => controller.abort(), SOURCE_BATCH_TIMEOUT_MS + 5000);
+  let latestSnapshot = null;
   try {
-    const snapshot = await getJson(
-      `/api/search/source?session=${encodeURIComponent(sessionId)}&source=${encodeURIComponent(source)}&offset=${offset}`,
-      {signal: controller.signal}
+    const response = await fetch(
+      `/api/search/stream?session=${encodeURIComponent(sessionId)}`,
+      {signal: controller.signal},
     );
-    applySnapshot(snapshot, sequence);
-    return {source, ok: true};
-  } catch (error) {
-    if (sequence !== currentSearchSequence || (!timedOut && error.name === 'AbortError')) {
-      return {source, ok: false, ignored: true};
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const error = new Error(body.error || `Request failed (${response.status}).`);
+      error.status = response.status;
+      throw error;
     }
-    if (timedOut) {
-      fetch(
-        `/api/search/source/cancel?session=${encodeURIComponent(sessionId)}&source=${encodeURIComponent(source)}`,
-        {keepalive: true},
-      ).catch(() => {});
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = '';
+    while (true) {
+      const {value, done} = await reader.read();
+      buffered += decoder.decode(value || new Uint8Array(), {stream: !done});
+      const lines = buffered.split('\n');
+      buffered = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.snapshot) {
+          latestSnapshot = event.snapshot;
+          applySnapshot(event.snapshot, sequence);
+        }
+      }
+      if (done) break;
     }
-    const failure = timedOut ? 'timeout'
-      : error.status ? 'server'
-      : 'network';
-    return {source, ok: false, failure, message: error.message};
+    if (buffered.trim()) {
+      const event = JSON.parse(buffered);
+      if (event.snapshot) {
+        latestSnapshot = event.snapshot;
+        applySnapshot(event.snapshot, sequence);
+      }
+    }
+    return latestSnapshot;
   } finally {
     clearTimeout(timer);
     searchControllers.delete(controller);
   }
-}
-
-function failureStatus(failures) {
-  const timedOut = [...failures.values()].filter(item => item.failure === 'timeout');
-  const other = [...failures.values()].filter(item => item.failure !== 'timeout');
-  const parts = [`${currentResults.length} ranked images`];
-  if (timedOut.length) {
-    parts.push(`${timedOut.length} timed out (${timedOut.map(item => collectionLabel(item.source)).join(', ')})`);
-  }
-  if (other.length) {
-    parts.push(`${other.length} request${other.length === 1 ? '' : 's'} failed (${other.map(item => collectionLabel(item.source)).join(', ')})`);
-  }
-  return parts.join(' · ');
 }
 
 async function runSearch(query) {
@@ -453,7 +484,9 @@ async function runSearch(query) {
   closeDetails();
   gallery.replaceChildren();
   galleryTiles.clear();
+  setGallerySearching(true);
   emptyState.hidden = true;
+  setSearchBusy(true);
   setPlainStatus(`Searching ${selected.length} collections…`);
 
   try {
@@ -464,33 +497,24 @@ async function runSearch(query) {
     currentSession = start.session_id;
     const sessionId = start.session_id;
     applySnapshot(start, sequence);
-    const offsets = Object.fromEntries(selected.map(source => [source, 0]));
-    const failures = new Map();
-    let active = [...selected];
-    while (active.length && sequence === currentSearchSequence) {
-      const outcomes = await mapWithConcurrency(
-        active,
-        MAX_PARALLEL_COLLECTIONS,
-        source => searchSourceBatch(source, offsets[source], sequence, sessionId),
-      );
-      if (sequence !== currentSearchSequence) return;
-      for (const outcome of outcomes) {
-        if (!outcome.ok && !outcome.ignored) failures.set(outcome.source, outcome);
-      }
-      const policy = await getJson(`/api/search/policy?session=${encodeURIComponent(sessionId)}`);
-      applySnapshot(policy, sequence);
-      const succeeded = new Set(outcomes.filter(item => item.ok).map(item => item.source));
-      active = active.filter(source => succeeded.has(source) && policy.source_policy[source]?.continue);
-      for (const source of active) offsets[source] += 10;
-    }
-    if (sequence === currentSearchSequence && failures.size) {
-      setPlainStatus(failureStatus(failures));
+    let hasActiveSources = true;
+    while (hasActiveSources && sequence === currentSearchSequence) {
+      const snapshot = await streamSearchRound(sequence, sessionId);
+      if (!snapshot || sequence !== currentSearchSequence) return;
+      hasActiveSources = Object.values(snapshot.source_policy || {})
+        .some(policy => policy.continue);
     }
     if (sequence === currentSearchSequence && currentResults.length === 0) {
+      setGallerySearching(false);
       gallery.innerHTML = '<p class="notice">No matching images found.</p>';
     }
   } catch (error) {
-    if (sequence === currentSearchSequence) setPlainStatus(error.message);
+    if (sequence === currentSearchSequence) {
+      setGallerySearching(false);
+      setPlainStatus(error.message);
+    }
+  } finally {
+    if (sequence === currentSearchSequence) setSearchBusy(false);
   }
 }
 
@@ -629,6 +653,7 @@ document.querySelector('#select-none').addEventListener('click', () => {
   updateSourceCount();
 });
 sourceOptions.addEventListener('change', updateSourceCount);
+closeDeveloperWarning.addEventListener('click', () => developerWarning.close());
 document.querySelector('#close-panel').addEventListener('click', closeDetails);
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDetails(); });
 document.querySelectorAll('[data-query]').forEach(button => {

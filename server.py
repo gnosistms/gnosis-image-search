@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import copy
 import hashlib
 import http.cookies
@@ -36,7 +37,8 @@ sys.path.insert(0, str(PROTOTYPE_DIR))
 
 import sources  # noqa: E402
 from additional_sources import (  # noqa: E402
-    NGACatalog, getty, harvard, loc, mia, museum_commons, paris_musees, yale,
+    NGACatalog, getty, harvard, loc, mia, museum_commons, paris_musees,
+    universal_comasonry, yale,
 )
 from gnosis_catalog import GnosisCatalog  # noqa: E402
 from image_dimensions import resolve_result_dimensions  # noqa: E402
@@ -49,6 +51,7 @@ from beauty_tournament import TOURNAMENT  # noqa: E402
 
 SOURCE_LABELS = OrderedDict([
     ("gnosis", "Gnosis VN"),
+    ("universal_comasonry", "Universal Co-Masonry Galleries"),
     ("cleveland", "Cleveland Museum of Art"),
     ("met", "Metropolitan Museum of Art"),
     ("rijksmuseum", "Rijksmuseum"),
@@ -70,8 +73,11 @@ DEFAULT_SELECTED = tuple(SOURCE_LABELS)
 MAX_SESSIONS = 24
 SESSION_TTL_SECONDS = 30 * 60
 BATCH_SIZE = 10
+PREVIEW_BATCH_SIZES = (1, 2, 4)
 AGGREGATE_QUALITY_WINDOW = 50
-SOURCE_CONCURRENCY = max(1, int(os.environ.get("SEARCH_SOURCE_CONCURRENCY", "12")))
+SOURCE_CONCURRENCY = max(
+    1, int(os.environ.get("SEARCH_SOURCE_CONCURRENCY", str(len(SOURCE_LABELS)))),
+)
 SOURCE_CONCURRENCY_PER_PROVIDER = max(
     1, int(os.environ.get("SEARCH_PROVIDER_CONCURRENCY", "2")),
 )
@@ -80,6 +86,7 @@ SEARCH_BATCH_CACHE_TTL_SECONDS = max(
 )
 SEARCH_BATCH_CACHE_SIZE = max(1, int(os.environ.get("SEARCH_BATCH_CACHE_SIZE", "256")))
 RANK_AFTER_DIRTY_BATCHES = 4
+SOURCE_BATCH_TIMEOUT_SECONDS = 120
 AIC_PROXY_DELIVERIES = frozenset(("huggingface", "wayback"))
 AIC_PROXY_HOSTS = frozenset(("datasets-server.huggingface.co", "web.archive.org"))
 AIC_PROXY_MAX_BYTES = 16 * 1024 * 1024
@@ -197,6 +204,7 @@ sources.ADAPTERS["paris_musees"] = paris_musees
 sources.ADAPTERS["mia"] = mia
 sources.ADAPTERS["loc"] = loc
 sources.ADAPTERS["commons"] = museum_commons
+sources.ADAPTERS["universal_comasonry"] = universal_comasonry
 
 
 class InputError(ValueError):
@@ -277,6 +285,10 @@ def normalize_result(item: dict, provider_rank: int = 0) -> dict:
         "date": str(item.get("date") or ""),
         "medium": str(item.get("medium") or ""),
         "license": str(item.get("license") or "unknown"),
+        "rights_status": str(item.get("rights_status") or ""),
+        "rights_basis": str(item.get("rights_basis") or ""),
+        "rights_evidence": copy.deepcopy(item.get("rights_evidence") or {}),
+        "attribution": str(item.get("attribution") or ""),
         "page_url": page_url,
         "image_url": image_url,
         "thumb_url": str(item.get("thumb_url") or item.get("image_url") or ""),
@@ -295,9 +307,11 @@ def normalize_result(item: dict, provider_rank: int = 0) -> dict:
         "provider_rank": int(provider_rank),
     }
     normalized["id"] = result_id(normalized)
-    supplied_description = " · ".join(filter(None, [
-        normalized["artist"], normalized["date"], normalized["medium"],
-    ]))
+    supplied_description = str(item.get("description") or "").strip() or " · ".join(
+        filter(None, [
+            normalized["artist"], normalized["date"], normalized["medium"],
+        ])
+    )
     normalized["description"] = supplied_description or (
         f'An image titled “{normalized["title"]}” in the '
         f'{normalized["source_label"]} collection.'
@@ -325,7 +339,7 @@ def search_one(
             "error": "",
         }
     except Exception as exc:
-        return {
+        group = {
             "source": source_name,
             "label": SOURCE_LABELS[source_name],
             "results": [],
@@ -333,6 +347,12 @@ def search_one(
             "elapsed_ms": round((time.monotonic() - started) * 1000),
             "error": f"{type(exc).__name__}: {exc}",
         }
+        if isinstance(exc, sources.EuropeanaAccessError):
+            group["alert"] = {
+                "code": "europeana_key_access",
+                "status": exc.status,
+            }
+        return group
 
 
 def search_batch(
@@ -342,6 +362,7 @@ def search_batch(
     batch_size: int = BATCH_SIZE,
     adapters: Mapping[str, Callable] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    resolve_dimensions: bool = True,
 ) -> dict:
     """Fetch a growing provider window and return only its next slice."""
     def check_cancelled():
@@ -390,7 +411,9 @@ def search_batch(
         requested = offset + batch_size
         raw = adapter(query, requested)
         check_cancelled()
-        window = resolve_result_dimensions(list(raw[offset:requested]))
+        window = list(raw[offset:requested])
+        if resolve_dimensions:
+            window = resolve_result_dimensions(window)
         check_cancelled()
         group = {
             "source": source_name,
@@ -413,7 +436,7 @@ def search_batch(
     except SearchCancelled:
         raise
     except Exception as exc:
-        return {
+        group = {
             "source": source_name,
             "label": SOURCE_LABELS[source_name],
             "results": [],
@@ -423,6 +446,12 @@ def search_batch(
             "elapsed_ms": round((time.monotonic() - started) * 1000),
             "error": f"{type(exc).__name__}: {exc}",
         }
+        if isinstance(exc, sources.EuropeanaAccessError):
+            group["alert"] = {
+                "code": "europeana_key_access",
+                "status": exc.status,
+            }
+        return group
     finally:
         if provider_acquired:
             SOURCE_SEMAPHORES[source_name].release()
@@ -432,6 +461,122 @@ def search_batch(
             with SEARCH_BATCH_CACHE_LOCK:
                 SEARCH_BATCH_INFLIGHT.pop(cache_key, None)
                 cache_event.set()
+
+
+def score_search_results(query: str, items: list[dict]) -> list[dict]:
+    """Enrich a copy of visible results without delaying their first display."""
+    enriched = resolve_result_dimensions(copy.deepcopy(items))
+    add_semantic_scores(query, enriched)
+    add_pamela_scores(enriched)
+    for item in enriched:
+        item["pamela_rerank"] = True
+    return enriched
+
+
+def stream_search_round(
+    session: "SearchSession",
+    batch_search: Callable = search_batch,
+):
+    """Search every active collection concurrently and yield NDJSON events."""
+    policy = session.continuation_policy()
+    active = [
+        source_name for source_name in session.selected_sources
+        if policy[source_name]["continue"] and not session.source_cancelled(source_name)
+    ]
+    if not active:
+        yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
+        return
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(active))
+    futures = {}
+    for source_name in active:
+        state = session.source_states[source_name]
+        batch_size = (
+            PREVIEW_BATCH_SIZES[state["rounds"]]
+            if state["rounds"] < len(PREVIEW_BATCH_SIZES)
+            else BATCH_SIZE
+        )
+        future = executor.submit(
+            batch_search,
+            source_name,
+            session.query,
+            policy[source_name]["fetched"],
+            batch_size,
+            cancelled=lambda name=source_name: session.source_cancelled(name),
+            resolve_dimensions=False,
+        )
+        futures[future] = (source_name, batch_size)
+
+    pending = set(futures)
+    round_items = []
+    deadline = time.monotonic() + SOURCE_BATCH_TIMEOUT_SECONDS
+    try:
+        while pending and not session.cancelled:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            completed, pending = concurrent.futures.wait(
+                pending,
+                timeout=remaining,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            if not completed:
+                break
+            for future in completed:
+                source_name, _batch_size = futures[future]
+                try:
+                    group = future.result()
+                    round_items.extend(group["results"])
+                    snapshot = session.merge_batch(
+                        group, coalesce_ranking=False, score_results=False,
+                    )
+                except SearchCancelled:
+                    continue
+                except Exception as exc:
+                    group = {
+                        "source": source_name,
+                        "results": [],
+                        "count": 0,
+                        "offset": policy[source_name]["fetched"],
+                        "exhausted": True,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                    snapshot = session.merge_batch(group, coalesce_ranking=True)
+                yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
+
+        for future in pending:
+            source_name, _batch_size = futures[future]
+            if session.cancelled:
+                future.cancel()
+                continue
+            group = {
+                "source": source_name,
+                "results": [],
+                "count": 0,
+                "offset": policy[source_name]["fetched"],
+                "exhausted": True,
+                "error": (
+                    f"TimeoutError: collection search exceeded "
+                    f"{SOURCE_BATCH_TIMEOUT_SECONDS} seconds"
+                ),
+            }
+            snapshot = session.merge_batch(group, coalesce_ranking=True)
+            session.cancel_source(source_name)
+            future.cancel()
+            yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
+
+        if round_items and not session.cancelled:
+            scored_items = score_search_results(session.query, round_items)
+            if not session.cancelled:
+                yield {
+                    "type": "rerank",
+                    "snapshot": session.merge_scored_results(scored_items),
+                }
+
+        if not session.cancelled:
+            yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 class SearchSession:
@@ -446,6 +591,7 @@ class SearchSession:
         self.families: dict[str, list[dict]] = {}
         self.family_by_id: dict[str, str] = {}
         self.source_errors: dict[str, str] = {}
+        self.source_alerts: dict[str, dict] = {}
         self.source_states = {
             name: {"fetched": 0, "last_ids": [], "exhausted": False,
                    "stop_reason": "", "rounds": 0, "last_batch_count": 0}
@@ -494,7 +640,12 @@ class SearchSession:
         self.dirty_batches = 0
         self.revision += 1
 
-    def merge_batch(self, group: dict, coalesce_ranking: bool = False) -> dict:
+    def merge_batch(
+        self,
+        group: dict,
+        coalesce_ranking: bool = False,
+        score_results: bool = True,
+    ) -> dict:
         source_name = group["source"]
         if self.source_cancelled(source_name):
             raise SearchCancelled("Search was superseded by a newer request.")
@@ -503,10 +654,8 @@ class SearchSession:
             if int(group.get("offset") or 0) != state["fetched"]:
                 return self.snapshot()
         incoming = list(group["results"])
-        add_semantic_scores(self.query, incoming)
-        add_pamela_scores(incoming)
-        for item in incoming:
-            item["pamela_rerank"] = True
+        if score_results:
+            incoming = score_search_results(self.query, incoming)
         if self.source_cancelled(source_name):
             raise SearchCancelled("Search was superseded by a newer request.")
         with self.lock:
@@ -523,10 +672,27 @@ class SearchSession:
             if group.get("error"):
                 self.source_errors[group["source"]] = group["error"]
                 state["stop_reason"] = "source unavailable"
+            if group.get("alert"):
+                self.source_alerts[group["source"]] = dict(group["alert"])
             if incoming:
                 self.rank_dirty = True
                 self.dirty_batches += 1
             self._rerank_locked(force=not coalesce_ranking)
+            return self.snapshot()
+
+    def merge_scored_results(self, scored_items: list[dict]) -> dict:
+        """Replace visible metadata records with enriched versions and rerank."""
+        with self.lock:
+            changed = False
+            for item in scored_items:
+                item_id = item.get("id")
+                if item_id in self.all_results:
+                    self.all_results[item_id] = item
+                    changed = True
+            if changed:
+                self.rank_dirty = True
+                self.dirty_batches += 1
+                self._rerank_locked(force=True)
             return self.snapshot()
 
     def item(self, item_id: str) -> dict | None:
@@ -578,12 +744,19 @@ class SearchSession:
                     should_continue, reason = True, "awaiting first batch"
                 elif state["stop_reason"]:
                     should_continue, reason = False, state["stop_reason"]
-                elif state["exhausted"] or state["last_batch_count"] < BATCH_SIZE:
+                elif state["exhausted"]:
                     should_continue, reason = False, "source exhausted"
+                elif (state["rounds"] <= len(PREVIEW_BATCH_SIZES)
+                      and state["last_batch_count"]
+                      == PREVIEW_BATCH_SIZES[state["rounds"] - 1]):
+                    should_continue, reason = True, "progressive preview batch complete"
                 elif top_hits == 0:
-                    should_continue, reason = False, "latest 10 produced no aggregate top-50 result"
+                    should_continue, reason = False, "latest batch produced no aggregate top-50 result"
                 else:
-                    should_continue, reason = True, f"{top_hits} of latest 10 rank in aggregate top 50"
+                    should_continue, reason = True, (
+                        f"{top_hits} of latest {state['last_batch_count']} "
+                        "rank in aggregate top 50"
+                    )
                 policy[name] = {
                     "continue": should_continue,
                     "reason": reason,
@@ -603,6 +776,7 @@ class SearchSession:
                 "revision": self.revision,
                 "results": list(self.results.values()),
                 "source_errors": dict(self.source_errors),
+                "source_alerts": copy.deepcopy(self.source_alerts),
                 "selected_count": len(self.selected_sources),
                 "source_policy": self.continuation_policy(),
             }
@@ -946,6 +1120,24 @@ class SearchHandler(BaseHTTPRequestHandler):
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_bytes(status, body, "application/json; charset=utf-8")
 
+    def send_ndjson(self, events):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        try:
+            for event in events:
+                line = json.dumps(event, ensure_ascii=False).encode("utf-8") + b"\n"
+                self.wfile.write(line)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            close = getattr(events, "close", None)
+            if close is not None:
+                close()
+
     def serve_static(self, name: str):
         path = WEB_DIR / name
         if not path.is_file():
@@ -1028,6 +1220,11 @@ class SearchHandler(BaseHTTPRequestHandler):
                     cancelled=lambda: session.source_cancelled(source_name),
                 )
                 self.send_json(200, session.merge_batch(group, coalesce_ranking=True))
+            elif url.path == "/api/search/stream":
+                session = get_session((params.get("session") or [""])[0])
+                if session.cancelled:
+                    raise SearchCancelled("Search was superseded by a newer request.")
+                self.send_ndjson(stream_search_round(session))
             elif url.path == "/api/search/policy":
                 session = get_session((params.get("session") or [""])[0])
                 self.send_json(200, session.snapshot(force_rank=True))
