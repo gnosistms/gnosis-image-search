@@ -123,7 +123,10 @@ function backendCommand(port) {
 }
 
 function waitUntilReady(port, child) {
-  const deadline = Date.now() + 120000;
+  // First launch seeds the bundled museum indexes into Application Support
+  // before the backend starts listening. Slow disks and mounted DMGs can make
+  // that one-time copy exceed two minutes even though the backend is healthy.
+  const deadline = Date.now() + 240000;
   return new Promise((resolve, reject) => {
     const probe = () => {
       if (child.exitCode !== null) {
