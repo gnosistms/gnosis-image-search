@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data: blob:; connect-src 'self'; style-src 'self'; script-src 'self'">
+  <title>Gnosis Image Search</title>
+  <link rel="icon" href="/gnosis-caduceus.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Gnosis Image Search home"><img class="brand-mark" src="/gnosis-caduceus.svg" alt=""><span class="brand-name">Gnosis Image Search</span></a>
+    <form id="search-form" class="search-form">
+      <label class="sr-only" for="query">Search images</label>
+      <input id="query" type="search" maxlength="240" placeholder="Search images" autocomplete="off" autofocus>
+      <button class="search-button" type="submit" aria-label="Search">⌕</button>
+    </form>
+    <button id="toggle-sources" class="filter-button" type="button" aria-expanded="false">Collections</button>
+  </header>
+
+  <section id="source-panel" class="source-panel" hidden>
+    <div class="source-panel-head">
+      <strong>Search collections</strong>
+      <div>
+        <button id="select-all" type="button">All</button>
+        <button id="select-none" type="button">None</button>
+      </div>
+    </div>
+    <div id="source-options" class="source-options"></div>
+    <p class="adaptive-note">Results load in rounds of 10. A collection stops when its latest 10 add nothing to the combined top 50.</p>
+  </section>
+
+  <div id="search-status" class="search-status">Search public museum, archive, and Gnosis VN images</div>
+
+  <main id="content">
+    <section id="empty-state" class="empty-state">
+      <p>Search across selected visual collections.</p>
+      <div class="examples">
+        <button data-query="Sophia divine wisdom">Sophia divine wisdom</button>
+        <button data-query="rose cross engraving">Rose cross engraving</button>
+        <button data-query="Saint Peter escaping prison">Saint Peter escaping prison</button>
+      </div>
+    </section>
+    <div id="gallery" class="gallery" aria-live="polite"></div>
+  </main>
+
+  <aside id="detail-panel" class="detail-panel" hidden aria-label="Image details">
+    <div class="panel-top">
+      <button id="close-panel" class="icon-button" type="button" aria-label="Close details">×</button>
+    </div>
+    <div class="large-image-wrap">
+      <a id="detail-image-link" target="_blank" rel="noopener noreferrer">
+        <img id="detail-image" alt="">
+        <span id="detail-image-spinner" class="detail-image-spinner" aria-hidden="true" hidden></span>
+        <span id="detail-dimensions-overlay" class="dimensions-overlay" hidden></span>
+      </a>
+    </div>
+    <div class="detail-info">
+      <p id="detail-source" class="detail-source"></p>
+      <h1 id="detail-title"></h1>
+      <p id="detail-description" class="detail-description"></p>
+      <div class="detail-meta">
+        <span id="detail-license"></span>
+        <span id="detail-size"></span>
+      </div>
+      <a id="detail-link" class="visit-link" target="_blank" rel="noopener noreferrer">Visit source site ↗</a>
+    </div>
+    <section id="alternate-section" class="similar-section" hidden>
+      <h2>Other versions</h2>
+      <p id="alternate-status"></p>
+      <div id="alternate-grid" class="similar-grid"></div>
+    </section>
+    <section class="similar-section">
+      <h2>Visually similar images</h2>
+      <p id="similar-status">Select an image to compare it with this search’s results.</p>
+      <div id="similar-grid" class="similar-grid"></div>
+    </section>
+  </aside>
+
+  <template id="tile-template">
+    <button class="image-tile" type="button">
+      <img loading="lazy" alt="">
+      <span class="tile-overlay"><strong></strong><small></small></span>
+    </button>
+  </template>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+node_modules/
+out/
+build/
+.packaging-python/
+.backend-venv/
+npm-debug.log*
+assets/icon.iconset/
+__pycache__/
+data/*
+!data/gnosis-media.json
+!data/nga-search.db
+!data/pamela/
+data/pamela/*
+!data/pamela/siglip2-large-patch16-256.npz
+!data/beauty-tournament/
+data/beauty-tournament/*
+!data/beauty-tournament/axis-ranking-model.npz

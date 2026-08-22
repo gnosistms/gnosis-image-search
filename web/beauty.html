@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saint Peter Museum Tournament</title>
+  <script>
+    if (location.protocol === 'file:') location.replace('http://127.0.0.1:8400/beauty');
+  </script>
+  <link rel="stylesheet" href="/beauty.css">
+</head>
+<body>
+  <header>
+    <div><span class="mark">✦</span><strong> Saint Peter Museum Tournament</strong></div>
+    <div class="progress"><span id="decision-count">0 decisions</span><button id="undo" type="button">Undo</button></div>
+  </header>
+  <main>
+    <div class="prompt">
+      <h1>Which result should rank higher?</h1>
+      <p>Both images come from the same museum search for “saint peter.” Choose the better result by your actual criteria.</p>
+    </div>
+    <section class="pair" aria-live="polite">
+      <button id="left-card" class="image-card" type="button" aria-label="Choose left image">
+        <span class="image-stage"><img id="left-image" alt=""></span>
+        <span class="caption"><strong id="left-title"></strong><small id="left-source"></small><kbd>A</kbd></span>
+      </button>
+      <div class="or">or</div>
+      <button id="right-card" class="image-card" type="button" aria-label="Choose right image">
+        <span class="image-stage"><img id="right-image" alt=""></span>
+        <span class="caption"><strong id="right-title"></strong><small id="right-source"></small><kbd>D</kbd></span>
+      </button>
+    </section>
+    <div class="secondary-actions">
+      <button id="tie" type="button">Equally beautiful <kbd>S</kbd></button>
+      <button id="no-opinion" type="button">No opinion <kbd>Space</kbd></button>
+    </div>
+    <p id="status" role="status"></p>
+    <details>
+      <summary>Current ranking</summary>
+      <ol id="ranking"></ol>
+    </details>
+  </main>
+  <script src="/beauty.js" defer></script>
+</body>
+</html>

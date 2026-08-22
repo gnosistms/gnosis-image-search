@@ -1,0 +1,1182 @@
+import threading
+import time
+import tempfile
+import unittest
+import urllib.error
+import urllib.parse
+import zipfile
+from pathlib import Path
+
+import numpy as np
+
+import ranker
+import server
+import visual_similarity
+import sources
+import gnosis_fuzzy
+import additional_sources
+import gnosis_catalog
+import semantic_embeddings
+
+
+def result(source, title="Result", source_id="1", **extra):
+    item = {
+        "source": source,
+        "source_id": source_id,
+        "title": title,
+        "license": "CC0",
+        "page_url": f"https://example.test/{source}/{source_id}",
+        "image_url": f"https://images.test/{source}/{source_id}.jpg",
+        "thumb_url": f"https://images.test/{source}/{source_id}-thumb.jpg",
+        "width": 1200,
+        "height": 800,
+    }
+    item.update(extra)
+    return item
+
+
+class RankingTests(unittest.TestCase):
+    def test_exact_title_match_beats_provider_rank(self):
+        exact = server.normalize_result(result("met", "Sophia divine wisdom"), 8)
+        weak = server.normalize_result(result("gnosis", "Portrait of Sophia"), 0)
+        ranked = ranker.rank_results("Sophia divine wisdom", [weak, exact])
+        self.assertEqual(ranked[0]["id"], exact["id"])
+
+    def test_gnosis_boost_breaks_a_near_tie_only(self):
+        gnosis = server.normalize_result(result("gnosis", "Rose cross"), 1)
+        museum = server.normalize_result(result("met", "Rose cross", source_id="2"), 1)
+        ranked = ranker.rank_results("rose cross", [museum, gnosis])
+        self.assertEqual(ranked[0]["source"], "gnosis")
+
+    def test_action_synonym_outweighs_a_generic_subject_match(self):
+        liberation = server.normalize_result(
+            result("aic", "Liberation of Saint Peter from Prison"), 3
+        )
+        generic = server.normalize_result(
+            result("wellcome", "Saint Peter appearing to Saint Agatha in prison"), 0
+        )
+        ranked = ranker.rank_results("Saint Peter escaping prison", [generic, liberation])
+        self.assertEqual(ranked[0]["id"], liberation["id"])
+
+    def test_duplicate_image_urls_are_collapsed(self):
+        first = server.normalize_result(result("gnosis", "Work"), 0)
+        duplicate = server.normalize_result(result("met", "Work", source_id="2"), 0)
+        duplicate["image_url"] = first["image_url"] + "?size=large"
+        ranked = ranker.rank_results("work", [first, duplicate])
+        self.assertEqual(len(ranked), 1)
+
+    def test_long_duplicate_artwork_titles_are_collapsed_across_urls(self):
+        title = "Saint Peter in prison visited by Saint Paul after Filippino Lippi"
+        first = server.normalize_result(result("wellcome", title, "1"), 0)
+        second = server.normalize_result(result("openverse", title, "2"), 0)
+        self.assertEqual(len(ranker.rank_results("Saint Peter prison", [first, second])), 1)
+
+    def test_family_keeps_highest_resolution_and_retains_alternate(self):
+        small = server.normalize_result(result("met", "A work", "1", width=800, height=600))
+        large = server.normalize_result(result("nga", "Another record", "2", width=2400, height=1800))
+        ranked, families = ranker.rank_result_groups(
+            "work", [small, large], same_image=lambda first, second: True,
+        )
+        self.assertEqual(ranked[0]["id"], large["id"])
+        self.assertEqual(ranked[0]["duplicate_count"], 1)
+        self.assertEqual({item["id"] for item in families[large["id"]]},
+                         {small["id"], large["id"]})
+
+    def test_gnosis_variants_with_same_curated_description_are_collapsed(self):
+        description = "A detailed curated description of the same historical image " * 3
+        original = server.normalize_result(
+            result("gnosis", "Original scan", "1", medium=description), 0,
+        )
+        upscale = server.normalize_result(
+            result("gnosis", "Topaz upscale", "2", medium=description,
+                   width=2400, height=1600), 1,
+        )
+        ranked = ranker.rank_results("historical image", [original, upscale])
+        self.assertEqual(len(ranked), 1)
+        self.assertEqual(ranked[0]["id"], upscale["id"])
+
+    def test_rank_is_sqrt_pixel_area_times_siglip_relevance(self):
+        item = server.normalize_result(
+            result("nga", "Object", "2", width=2000, height=500), 0,
+        )
+        item["semantic_score"] = 0.75
+        score, reason = ranker.score_result("subject", item)
+        self.assertEqual(score, 750.0)
+        self.assertIn("size 1000.00", reason)
+        self.assertIn("relevance 0.750", reason)
+
+    def test_resolution_and_relevance_both_affect_rank(self):
+        large = server.normalize_result(
+            result("met", "Object", "1", width=2048, height=2048), 0,
+        )
+        relevant = server.normalize_result(
+            result("nga", "Object", "2", width=1024, height=1024), 0,
+        )
+        large["semantic_score"] = 0.25
+        relevant["semantic_score"] = 0.75
+        ranked = ranker.rank_results("subject", [large, relevant])
+        self.assertEqual(ranked[0]["id"], relevant["id"])
+        self.assertEqual(ranked[0]["size_score"], 1024.0)
+        self.assertEqual(ranked[0]["relevance_score"], 0.75)
+
+    def test_pamela_mode_ranks_as_size_times_criterion_score(self):
+        preferred = server.normalize_result(result("met", "Preferred", "1"), 0)
+        rejected = server.normalize_result(result("met", "Rejected", "2"), 0)
+        for item, criterion in ((preferred, 1.0), (rejected, 0.0)):
+            item["semantic_score"] = 0.5
+            item["pamela_score"] = criterion
+            item["pamela_rerank"] = True
+        ranked = ranker.rank_results("subject", [rejected, preferred])
+        self.assertEqual(ranked[0]["id"], preferred["id"])
+        self.assertIn("PAMELA criteria", ranked[0]["rank_reason"])
+        expected = (1200 * 800) ** 0.5
+        self.assertAlmostEqual(ranked[0]["rank_score"], expected, places=4)
+
+
+class SessionTests(unittest.TestCase):
+    def setUp(self):
+        with server.SESSIONS_LOCK:
+            server.SESSIONS.clear()
+
+    def test_gnosis_is_optional_and_selectable(self):
+        self.assertEqual(server.parse_sources("met,gnosis"), ["met", "gnosis"])
+        self.assertEqual(server.parse_sources("met"), ["met"])
+
+    def test_every_collection_is_selected_by_default(self):
+        self.assertEqual(tuple(server.SOURCE_LABELS), server.DEFAULT_SELECTED)
+
+    def test_session_merges_sources_into_one_ranked_list(self):
+        session = server.create_session("divine wisdom", ["gnosis", "met"])
+        gnosis_item = server.normalize_result(result("gnosis", "Book collection"), 0)
+        met_item = server.normalize_result(result("met", "Divine Wisdom", source_id="2"), 3)
+        session.merge_batch({"source": "gnosis", "results": [gnosis_item], "error": "",
+                             "offset": 0, "exhausted": True})
+        snapshot = session.merge_batch({"source": "met", "results": [met_item], "error": "",
+                                        "offset": 0, "exhausted": True})
+        self.assertEqual(len(snapshot["results"]), 2)
+        self.assertEqual(snapshot["results"][0]["source"], "met")
+        self.assertEqual(snapshot["revision"], 2)
+
+    def test_session_gallery_collapses_but_keeps_versions_addressable(self):
+        session = server.create_session("work", ["met"])
+        small = server.normalize_result(result("met", "Work", "1", width=800, height=600))
+        large = server.normalize_result(result("met", "Work", "2", width=2400, height=1800))
+        large["image_url"] = small["image_url"] + "?download=1"
+        snapshot = session.merge_batch({
+            "source": "met", "results": [small, large], "error": "",
+            "offset": 0, "count": 2, "exhausted": True,
+        })
+        self.assertEqual(len(snapshot["results"]), 1)
+        self.assertEqual(snapshot["results"][0]["id"], large["id"])
+        self.assertEqual(session.item(small["id"])["id"], small["id"])
+        self.assertEqual({item["id"] for item in session.family(small["id"])},
+                         {small["id"], large["id"]})
+        related = session.related(large["id"])
+        self.assertEqual([item["id"] for item in related["alternates"]], [small["id"]])
+        self.assertEqual(related["results"], [])
+
+    def test_later_stronger_results_move_to_the_top(self):
+        session = server.create_session("saint peter prison", ["gnosis", "met"])
+        early = server.normalize_result(result("gnosis", "Portrait of Saint Peter"), 0)
+        first = session.merge_batch({"source": "gnosis", "results": [early], "error": "",
+                                     "offset": 0, "exhausted": True})
+        self.assertEqual(first["results"][0]["id"], early["id"])
+
+        late = server.normalize_result(
+            result("met", "Saint Peter escaping prison", source_id="2"), 4
+        )
+        second = session.merge_batch({"source": "met", "results": [late], "error": "",
+                                      "offset": 0, "exhausted": True})
+        self.assertEqual(second["results"][0]["id"], late["id"])
+        self.assertGreater(second["revision"], first["revision"])
+
+    def test_http_merges_coalesce_ranking_until_policy_snapshot(self):
+        session = server.create_session("divine wisdom", ["gnosis", "met"])
+        first_item = server.normalize_result(result("gnosis", "Book collection"), 0)
+        second_item = server.normalize_result(
+            result("met", "Divine Wisdom", source_id="2"), 0,
+        )
+        first = session.merge_batch({
+            "source": "gnosis", "results": [first_item], "error": "",
+            "offset": 0, "count": 1, "exhausted": True,
+        }, coalesce_ranking=True)
+        second = session.merge_batch({
+            "source": "met", "results": [second_item], "error": "",
+            "offset": 0, "count": 1, "exhausted": True,
+        }, coalesce_ranking=True)
+        self.assertEqual(len(first["results"]), 1)
+        self.assertEqual(len(second["results"]), 1)
+        final = session.snapshot(force_rank=True)
+        self.assertEqual(len(final["results"]), 2)
+        self.assertEqual(final["results"][0]["id"], second_item["id"])
+
+    def test_cancelled_session_rejects_late_merge(self):
+        session = server.create_session("light", ["met"])
+        session.cancel()
+        with self.assertRaises(server.SearchCancelled):
+            session.merge_batch({
+                "source": "met", "results": [], "error": "",
+                "offset": 0, "count": 0, "exhausted": True,
+            })
+
+    def test_source_cancellation_does_not_cancel_other_collections(self):
+        session = server.create_session("light", ["met", "nga"])
+        session.cancel_source("met")
+        self.assertTrue(session.source_cancelled("met"))
+        self.assertFalse(session.source_cancelled("nga"))
+
+    def test_provider_failure_is_isolated(self):
+        def fail(query, limit):
+            raise RuntimeError("provider unavailable")
+
+        group = server.search_one("met", "light", 4, {"met": fail})
+        self.assertEqual(group["results"], [])
+        self.assertIn("provider unavailable", group["error"])
+
+    def test_adaptive_policy_stops_a_source_whose_latest_ten_miss_top_50(self):
+        session = server.create_session("target subject", ["strong", "weak"])
+        session.source_states = {
+            "strong": {"fetched": 0, "last_ids": [], "exhausted": False,
+                       "stop_reason": "", "rounds": 0, "last_batch_count": 0},
+            "weak": {"fetched": 0, "last_ids": [], "exhausted": False,
+                     "stop_reason": "", "rounds": 0, "last_batch_count": 0},
+        }
+        strong = [server.normalize_result(
+            result("met", "target subject", str(index)), index
+        ) for index in range(50)]
+        weak = [server.normalize_result(
+            result("openverse", f"unrelated item {index}", str(index)), index
+        ) for index in range(10)]
+        session.results = {item["id"]: item for item in ranker.rank_results(
+            session.query, strong + weak
+        )}
+        session.source_states["strong"].update(
+            fetched=50, last_ids=[item["id"] for item in strong[-10:]], rounds=5,
+            last_batch_count=10
+        )
+        session.source_states["weak"].update(
+            fetched=10, last_ids=[item["id"] for item in weak], rounds=1,
+            last_batch_count=10
+        )
+        policy = session.continuation_policy()
+        self.assertFalse(policy["weak"]["continue"])
+        self.assertIn("no aggregate top-50", policy["weak"]["reason"])
+
+    def test_adaptive_policy_continues_when_latest_batch_has_a_top_50_hit(self):
+        session = server.create_session("target", ["met"])
+        batch = [server.normalize_result(
+            result("met", "target", str(index)), index
+        ) for index in range(10)]
+        session.results = {item["id"]: item for item in ranker.rank_results("target", batch)}
+        session.source_states["met"].update(
+            fetched=10, last_ids=[item["id"] for item in batch], rounds=1,
+            last_batch_count=10
+        )
+        self.assertTrue(session.continuation_policy()["met"]["continue"])
+
+    def test_unqueried_source_is_reported_as_still_active(self):
+        session = server.create_session("target", ["met"])
+        policy = session.continuation_policy()["met"]
+        self.assertTrue(policy["continue"])
+        self.assertEqual(policy["reason"], "awaiting first batch")
+
+    def test_validation(self):
+        self.assertEqual(server.validate_query("  divine   light  "), "divine light")
+        with self.assertRaises(server.InputError):
+            server.parse_sources("unknown")
+        with self.assertRaises(server.InputError):
+            server.parse_sources("openverse")
+        self.assertEqual(server.parse_sources("commons"), ["commons"])
+        with self.assertRaises(server.InputError):
+            server.validate_limit(0)
+
+    def test_aic_proxy_resolves_only_approved_session_images(self):
+        session = server.create_session("peter", ["aic"])
+        proxied = server.normalize_result(result(
+            "aic", source_id="1", image_delivery="huggingface",
+            image_url="https://datasets-server.huggingface.co/cached/image.jpg",
+        ))
+        direct = server.normalize_result(result(
+            "aic", source_id="2", image_delivery="commons",
+            image_url="https://commons.wikimedia.org/image.jpg",
+        ))
+        session.results = {item["id"]: item for item in (proxied, direct)}
+        self.assertEqual(
+            server.get_aic_proxy_item(session.id, proxied["id"])["source_id"], "1"
+        )
+        with self.assertRaises(server.InputError):
+            server.get_aic_proxy_item(session.id, direct["id"])
+        with self.assertRaises(server.InputError):
+            server.get_aic_proxy_item(session.id, "missing")
+
+    def test_aic_proxy_rejects_unapproved_host(self):
+        session = server.create_session("peter", ["aic"])
+        item = server.normalize_result(result(
+            "aic", image_delivery="huggingface",
+            image_url="https://example.test/not-a-mirror.jpg",
+        ))
+        session.results[item["id"]] = item
+        with self.assertRaises(server.InputError):
+            server.get_aic_proxy_item(session.id, item["id"])
+
+    def test_aic_proxy_supplies_jpeg_mime_and_retries(self):
+        jpeg = b"\xff\xd8\xff\xe0" + b"image"
+        calls = []
+        original_urlopen = server.urllib.request.urlopen
+        original_sleep = server.time.sleep
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, limit):
+                return jpeg
+
+        def urlopen(request, timeout):
+            calls.append((request.full_url, timeout))
+            if len(calls) == 1:
+                raise urllib.error.URLError("temporary")
+            return Response()
+
+        server.urllib.request.urlopen = urlopen
+        server.time.sleep = lambda seconds: None
+        try:
+            data, mime = server.fetch_aic_preview(
+                "https://datasets-server.huggingface.co/cached/image.jpg"
+            )
+        finally:
+            server.urllib.request.urlopen = original_urlopen
+            server.time.sleep = original_sleep
+        self.assertEqual(data, jpeg)
+        self.assertEqual(mime, "image/jpeg")
+        self.assertEqual(len(calls), 2)
+
+    def test_aic_proxy_rejects_non_image_payload(self):
+        with self.assertRaises(server.ImageProxyError):
+            server.image_mime_type(b"not an image")
+
+
+class BatchTests(unittest.TestCase):
+    def test_new_collections_are_registered_and_selected(self):
+        self.assertEqual(server.SOURCE_LABELS["getty"], "J. Paul Getty Museum")
+        self.assertEqual(server.SOURCE_LABELS["loc"], "Library of Congress")
+        self.assertEqual(server.SOURCE_LABELS["nga"], "National Gallery of Art")
+        self.assertEqual(server.SOURCE_LABELS["harvard"], "Harvard Art Museums")
+        self.assertEqual(
+            server.SOURCE_LABELS["commons"],
+            "Wikimedia Commons — Museum Collections",
+        )
+        self.assertEqual(server.SOURCE_LABELS["yale"], "Yale LUX — Art Museums")
+        self.assertEqual(server.SOURCE_LABELS["paris_musees"], "Paris Musées")
+        self.assertEqual(
+            server.SOURCE_LABELS["mia"], "Minneapolis Institute of Art"
+        )
+        for name in (
+            "getty", "loc", "nga", "harvard", "yale", "paris_musees",
+            "mia", "commons",
+        ):
+            self.assertIn(name, sources.ADAPTERS)
+            self.assertIn(name, server.DEFAULT_SELECTED)
+
+    def test_yale_parser_keeps_only_reusable_art_museum_images(self):
+        record = {
+            "id": "https://lux.collections.yale.edu/data/object/yale-1",
+            "_label": "Museum work",
+            "member_of": [{"_label": "Yale University Art Gallery"}],
+            "subject_to": [{"_label": "Public Domain"}],
+            "classified_as": [{"_label": "Painting"}],
+            "produced_by": {
+                "carried_out_by": [{"_label": "Example Artist"}],
+                "timespan": {"_label": "1650"},
+            },
+            "representation": [{
+                "digitally_shown_by": [{
+                    "type": "DigitalObject", "format": "image/jpeg",
+                    "digitally_available_via": [{
+                        "type": "DigitalService",
+                        "access_point": [{
+                            "id": "https://images.collections.yale.edu/iiif/2/example"
+                        }],
+                    }],
+                }],
+            }],
+        }
+        item = additional_sources.parse_yale_record(record)
+        self.assertIsNotNone(item)
+        self.assertEqual(item["artist"], "Example Artist")
+        self.assertEqual(item["medium"], "Painting")
+        self.assertEqual(
+            item["image_url"],
+            "https://images.collections.yale.edu/iiif/2/example/"
+            "full/max/0/default.jpg",
+        )
+        restricted = dict(record)
+        restricted["subject_to"] = [{"_label": "All rights reserved"}]
+        self.assertIsNone(additional_sources.parse_yale_record(restricted))
+
+    def test_mia_parser_requires_public_domain_public_image(self):
+        payload = {"hits": {"hits": [{"_id": "529", "_source": {
+            "id": 529, "title": "Lucretia", "artist": "Rembrandt",
+            "dated": "1666", "medium": "Oil on canvas",
+            "rights_type": "Public Domain", "image": "valid",
+            "public_access": 1, "image_width": 4812, "image_height": 5787,
+            "Cache_Location": "000000\\500\\20\\529",
+            "Primary_RenditionNumber": "mia_12345.jpg",
+        }}, {"_id": "530", "_source": {
+            "id": 530, "title": "Copyrighted", "rights_type": "In Copyright",
+            "image": "valid", "public_access": 1,
+        }}]}}
+        items = additional_sources.parse_mia_response(payload, 10)
+        self.assertEqual([item["source_id"] for item in items], ["529"])
+        self.assertEqual((items[0]["width"], items[0]["height"]), (4812, 5787))
+        self.assertEqual(
+            items[0]["thumb_url"],
+            "https://img.artsmia.org/web_objects_cache/"
+            "000000/500/20/529/mia_12345_800.jpg",
+        )
+        self.assertEqual(
+            items[0]["image_url"],
+            "https://img.artsmia.org/web_objects_cache/"
+            "000000/500/20/529/mia_12345_full.jpg",
+        )
+        self.assertTrue(items[0]["requires_source_visit"])
+
+    def test_paris_parser_uses_only_public_api_visuals_and_original_file(self):
+        payload = {"data": {"nodeQuery": {"entities": [{
+            "entityId": 226737, "title": "Sunset on the Seine",
+            "absolutePath": "http://parismuseescollections.paris.fr/node/226737",
+            "fieldOeuvreAuteurs": [{"entity": {"name": "Claude Monet"}}],
+            "fieldDateProduction": {"sort": "1880"},
+            "fieldMateriauxTechnique": [{"entity": {"name": "Oil paint"}}],
+            "fieldVisuelsPrincipals": [{"entity": {"vignette":
+                "http://apicollections.parismusees.paris.fr/sites/default/"
+                "files/styles/thumbnail/public/2020-01/monet.webp?itok=abc"
+            }}],
+        }]}}}
+        item = additional_sources.parse_paris_musees_response(payload, 10)[0]
+        self.assertEqual(item["artist"], "Claude Monet")
+        self.assertEqual(item["license"], "CC0")
+        self.assertEqual(
+            item["image_url"],
+            "https://apicollections.parismusees.paris.fr/sites/default/"
+            "files/2020-01/monet.webp",
+        )
+
+    def test_museum_commons_requires_structured_filters_and_reusable_license(self):
+        payload = {"query": {"pages": {
+            "1": {"title": "File:Museum work.jpg", "imageinfo": [{
+                "mime": "image/webp", "url": "https://commons.test/full.webp",
+                "thumburl": "https://commons.test/thumb.webp",
+                "descriptionurl": "https://commons.test/wiki/Museum_work",
+                "width": 3000, "height": 2000,
+                "extmetadata": {
+                    "Artist": {"value": "<b>Example Artist</b>"},
+                    "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                },
+            }]},
+            "2": {"title": "File:Non-reusable.jpg", "imageinfo": [{
+                "mime": "image/jpeg", "url": "https://commons.test/no.jpg",
+                "width": 3000, "height": 2000,
+                "extmetadata": {"LicenseShortName": {"value": "Copyrighted"}},
+            }]},
+        }}}
+        calls = []
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: calls.append(url) or payload
+        try:
+            items = additional_sources.museum_commons("saint peter", 10)
+        finally:
+            sources._get_json = original
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(calls[0]).query)["gsrsearch"][0]
+        self.assertIn("haswbstatement:P195", query)
+        self.assertIn("haswbstatement:P180", query)
+        self.assertEqual([item["source_id"] for item in items], ["File:Museum work.jpg"])
+        self.assertEqual(items[0]["artist"], "Example Artist")
+
+    def test_getty_parser_accepts_only_cc0_and_builds_full_iiif_url(self):
+        payload = {"data": [{
+            "id": "object/c88b3df0-de91-4f5b-a9ef-7b2b9a6d8abb",
+            "primary_name": "Irises", "date_created": "1889",
+            "culture": ["Dutch"], "slug_with_path": "/object/103JNH",
+            "producers": [{"primary_name": "Vincent van Gogh"}],
+            "manifest": {
+                "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+                "thumbUuid": "8c255d80-7382-46db-9fa8-892c0d37247e",
+                "thumb": "https://media.getty.edu/iiif/image/example/thumb.jpg",
+            },
+        }, {
+            "id": "object/restricted", "primary_name": "Restricted work",
+            "manifest": {
+                "license": "http://rightsstatements.org/vocab/InC/1.0/",
+                "thumbUuid": "restricted-image",
+            },
+        }]}
+        items = additional_sources.parse_getty_response(payload, 10)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["artist"], "Vincent van Gogh")
+        self.assertEqual(items[0]["license"], "CC0")
+        self.assertEqual(
+            items[0]["image_url"],
+            "https://media.getty.edu/iiif/image/"
+            "8c255d80-7382-46db-9fa8-892c0d37247e/full/max/0/default.jpg",
+        )
+        self.assertEqual(
+            items[0]["page_url"],
+            "https://www.getty.edu/art/collection/object/103JNH",
+        )
+
+    def test_loc_parser_uses_largest_derivative_and_rights_statement(self):
+        payload = {"results": [{
+            "digitized": True, "access_restricted": False,
+            "id": "http://www.loc.gov/item/123/", "title": "Historic view",
+            "url": "http://www.loc.gov/item/123/",
+            "image_url": [
+                "https://tile.loc.gov/example-small.jpg#h=300&w=400",
+                "https://tile.loc.gov/example.jpg#h=1200&w=1800",
+            ],
+            "item": {
+                "id": "123", "contributors": ["Maker"], "date": "1901",
+                "medium": ["photographic print"],
+                "rights_advisory": "No known restrictions on publication.",
+            },
+        }]}
+        item = additional_sources.parse_loc_response(payload, 10)[0]
+        self.assertEqual((item["width"], item["height"]), (1800, 1200))
+        self.assertEqual(item["license"], "No known restrictions")
+        normalized = server.normalize_result(item)
+        self.assertEqual(normalized["preview_click_action"], "visit_website")
+        self.assertEqual(normalized["preview_click_url"], "https://www.loc.gov/item/123/")
+
+    def test_harvard_parser_excludes_restricted_images_and_builds_iiif_urls(self):
+        payload = {"records": [{
+            "objectid": 42, "title": "Open work", "dated": "17th century",
+            "classification": "Prints", "imagepermissionlevel": 0,
+            "url": "http://www.harvardartmuseums.org/collections/object/42",
+            "people": [{"role": "Artist", "displayname": "An Artist"}],
+            "images": [{
+                "displayorder": 1, "baseimageurl":
+                    "https://nrs.harvard.edu/urn-3:HUAM:ABC_dynmc",
+                "width": 2400, "height": 1800,
+                "copyright": "President and Fellows of Harvard College",
+            }],
+        }, {
+            "objectid": 43, "title": "Restricted work",
+            "imagepermissionlevel": 1,
+            "primaryimageurl": "https://nrs.harvard.edu/urn-3:HUAM:XYZ",
+        }]}
+        items = additional_sources.parse_harvard_response(payload, 10)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["artist"], "An Artist")
+        self.assertEqual((items[0]["width"], items[0]["height"]), (2400, 1800))
+        self.assertEqual(
+            items[0]["image_url"],
+            "https://nrs.harvard.edu/urn-3:HUAM:ABC_dynmc/full/full/0/default.jpg",
+        )
+        self.assertEqual(
+            items[0]["thumb_url"],
+            "https://nrs.harvard.edu/urn-3:HUAM:ABC_dynmc/"
+            "full/!1024,1024/0/default.jpg",
+        )
+
+    def test_harvard_proxy_uses_official_signed_cdn_url(self):
+        source = (
+            "https://nrs.harvard.edu/urn-3:HUAM:ABC_dynmc/"
+            "full/!1024,1024/0/default.jpg"
+        )
+        self.assertEqual(
+            server.harvard_cdn_url(source),
+            "https://images.harvardartmuseums.org/"
+            "urn-3:HUAM:ABC_dynmc:IMAGE/full/!1024,1024/0/default.jpg",
+        )
+        with self.assertRaises(server.ImageProxyError):
+            server.harvard_cdn_url("https://example.test/image.jpg")
+
+    def test_harvard_proxy_accepts_lowercase_api_urn(self):
+        source = (
+            "https://nrs.harvard.edu/urn-3:huam:DDC112559_dynmc/"
+            "full/!1024,1024/0/default.jpg"
+        )
+        self.assertEqual(
+            server.harvard_cdn_url(source),
+            "https://images.harvardartmuseums.org/"
+            "urn-3:huam:DDC112559_dynmc:IMAGE/full/!1024,1024/0/default.jpg",
+        )
+
+    def test_nga_catalog_builds_and_searches_official_csv_shape(self):
+        objects = (
+            "objectid,title,attribution,displaydate,medium,classification\n"
+            "7,The Liberation of Saint Peter,Example Artist,1642,oil on canvas,Painting\n"
+            "8,Unrelated Work,Other Artist,1700,ink,Drawing\n"
+        )
+        images = (
+            "uuid,iiifurl,iiifthumburl,viewtype,sequence,width,height,openaccess,"
+            "depictstmsobjectid,assistivetext\n"
+            "a,https://api.nga.gov/iiif/a,https://api.nga.gov/thumb/a,primary,0,"
+            "3000,2000,1,7,Saint Peter escaping prison\n"
+            "b,https://api.nga.gov/iiif/b,https://api.nga.gov/thumb/b,primary,0,"
+            "1000,900,0,8,Not open access\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory) / "nga.zip"
+            database_path = Path(directory) / "nga.db"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("opendata-main/data/objects.csv", objects)
+                archive.writestr("opendata-main/data/published_images.csv", images)
+            catalog = additional_sources.NGACatalog(database_path)
+            catalog.build_from_archive(archive_path)
+            results = catalog.search("Peter prison", 10)
+        self.assertEqual([item["source_id"] for item in results], ["7"])
+        self.assertEqual((results[0]["width"], results[0]["height"]), (3000, 2000))
+        self.assertEqual(results[0]["license"], "NGA Open Access")
+
+    def test_gnosis_catalog_unchanged_probe_skips_record_download(self):
+        catalog = gnosis_catalog.GnosisCatalog("/tmp/nonexistent-gnosis-probe.json")
+        record = gnosis_fuzzy.prepare_record({
+            "id": 1, "title": "One", "modified": "2026-08-22T01:02:03",
+        })
+        catalog.records = [record]
+        catalog.latest_modified = "2026-08-22T01:02:03"
+        catalog._probe = lambda: ("2026-08-22T01:02:03", 1)
+        catalog._fetch_records = lambda *args: self.fail("downloaded unchanged records")
+        self.assertEqual(catalog.refresh(), 1)
+        self.assertEqual(catalog.last_refresh_mode, "unchanged")
+
+    def test_gnosis_catalog_incrementally_merges_modified_records(self):
+        catalog = gnosis_catalog.GnosisCatalog("/tmp/nonexistent-gnosis-merge.json")
+        old = {"id": 1, "title": "Old", "modified": "2026-08-22T01:00:00"}
+        new = {"id": 2, "title": "New", "modified": "2026-08-22T02:00:00"}
+        catalog.records = [gnosis_fuzzy.prepare_record(old)]
+        catalog.latest_modified = old["modified"]
+        catalog._probe = lambda: (new["modified"], 2)
+        fetched_after = []
+        catalog._fetch_records = lambda timestamp="": fetched_after.append(timestamp) or [new]
+        saved = []
+        catalog._save = lambda records, latest, total, mode: saved.append(
+            (records, latest, total, mode)
+        )
+        self.assertEqual(catalog.refresh(), 2)
+        self.assertTrue(fetched_after[0].startswith("2026-08-22T00:59:58"))
+        self.assertEqual({record["id"] for record in saved[0][0]}, {1, 2})
+        self.assertEqual(saved[0][3], "incremental")
+
+    def test_gnosis_catalog_refreshes_only_after_a_stale_search(self):
+        catalog = gnosis_catalog.GnosisCatalog("/tmp/nonexistent-gnosis-catalog.json")
+        starts = []
+        original_thread = gnosis_catalog.threading.Thread
+
+        class FakeThread:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+            def start(self):
+                starts.append(self.kwargs.get("name"))
+
+        gnosis_catalog.threading.Thread = FakeThread
+        try:
+            catalog.updated_at = time.time()
+            self.assertFalse(catalog.refresh_if_stale())
+            self.assertEqual(starts, [])
+            catalog.updated_at = 0
+            catalog.search("peter", 10)
+            self.assertEqual(starts, ["gnosis-catalog-refresh"])
+            catalog.search("peter", 10)
+            self.assertEqual(len(starts), 1)
+        finally:
+            gnosis_catalog.threading.Thread = original_thread
+
+    def test_gnosis_live_search_expands_escaping_to_escape(self):
+        wanted = result("gnosis", "Liberation of Saint Peter", "25340")
+        calls = []
+        original_standard = server._GNOSIS_STANDARD_SEARCH
+        original_live = sources._gnosis_live
+        original_fuzzy = server.GNOSIS_CATALOG.search
+        server._GNOSIS_STANDARD_SEARCH = lambda *args: []
+        sources._gnosis_live = lambda query, need: (
+            calls.append(query) or ([wanted] if query == "peter escape prison" else [])
+        )
+        server.GNOSIS_CATALOG.search = lambda *args: []
+        try:
+            items = server.search_gnosis("peter escaping prison", 10)
+        finally:
+            server._GNOSIS_STANDARD_SEARCH = original_standard
+            sources._gnosis_live = original_live
+            server.GNOSIS_CATALOG.search = original_fuzzy
+        self.assertIn("peter escape prison", calls)
+        self.assertEqual([item["source_id"] for item in items], ["25340"])
+
+    def test_gnosis_fuzzy_index_still_works_when_wordpress_is_unavailable(self):
+        fuzzy = result("gnosis", "Local fuzzy result", "local")
+        original_standard = server._GNOSIS_STANDARD_SEARCH
+        original_fuzzy = server.GNOSIS_CATALOG.search
+        server._GNOSIS_STANDARD_SEARCH = lambda *args: (_ for _ in ()).throw(
+            RuntimeError("offline")
+        )
+        server.GNOSIS_CATALOG.search = lambda *args: [fuzzy]
+        try:
+            items = server.search_gnosis("misspell", 10)
+        finally:
+            server._GNOSIS_STANDARD_SEARCH = original_standard
+            server.GNOSIS_CATALOG.search = original_fuzzy
+        self.assertEqual([item["source_id"] for item in items], ["local"])
+
+    def test_gnosis_fuzzy_search_tolerates_typo_and_missing_diacritics(self):
+        records = [{
+            "id": 7,
+            "title": "Thiền định dưới cây bồ đề",
+            "filename": "meditating-buddha.jpg",
+            "description": "A Buddhist teacher meditating beneath a sacred tree",
+            "page_url": "https://gnosis.test/7",
+            "image_url": "https://gnosis.test/7.jpg",
+            "thumb_url": "https://gnosis.test/7-small.jpg",
+            "width": 1600,
+            "height": 1200,
+        }]
+        original = gnosis_fuzzy._load_records
+        gnosis_fuzzy._load_records = lambda path: [
+            {**record, "_fields": {
+                name: (gnosis_fuzzy._fold(record.get(name)),
+                       gnosis_fuzzy._tokens(record.get(name)))
+                for name in gnosis_fuzzy.TEXT_COLUMNS if record.get(name)
+            }} for record in records
+        ]
+        try:
+            typo = gnosis_fuzzy.search(__file__, "budhist meditating", 10)
+            vietnamese = gnosis_fuzzy.search(__file__, "thien dinh", 10)
+        finally:
+            gnosis_fuzzy._load_records = original
+        self.assertEqual(typo[0]["source_id"], "7")
+        self.assertEqual(vietnamese[0]["source_id"], "7")
+
+    def test_gnosis_uses_live_wordpress_before_local_index(self):
+        live = result("gnosis", "Fresh WordPress result", "live")
+        local = result("gnosis", "Older local result", "local")
+        original_live, original_local = sources._gnosis_live, sources._gnosis_local
+        sources._gnosis_live = lambda query, need: [live]
+        sources._gnosis_local = lambda query, need: [local, live]
+        try:
+            items = sources.gnosis("subject", 10)
+        finally:
+            sources._gnosis_live, sources._gnosis_local = original_live, original_local
+        self.assertEqual([item["source_id"] for item in items], ["live", "local"])
+
+    def test_gnosis_live_bypasses_stale_cache_and_keeps_english_description(self):
+        calls = []
+        response = [{
+            "id": 25340,
+            "title": {"rendered": "Antonio_de_Bellis_-_La_liberazione_di_San_Pietro"},
+            "caption": {"rendered": "<p>Vietnamese caption</p>"},
+            "description": {"rendered": ""},
+            "jetpack_videopress": {
+                "description": "The Liberation of St. Peter. Key words: escape, prison."
+            },
+            "mime_type": "image/webp", "link": "https://gnosis.test/work",
+            "source_url": "https://gnosis.test/work.webp",
+            "media_details": {"width": 3840, "height": 2673, "sizes": {}},
+        }]
+        original = sources._get_json
+        def fake_get(*args, **kwargs):
+            calls.append((args, kwargs))
+            return response
+        sources._get_json = fake_get
+        try:
+            item = sources._gnosis_live("peter escape", 10)[0]
+        finally:
+            sources._get_json = original
+        self.assertFalse(calls[0][1]["ttl_ok"])
+        self.assertIn("escape", item["medium"])
+        self.assertEqual((item["width"], item["height"]), (3840, 2673))
+
+    def test_aic_uses_api_dimensions_cached_iiif_sizes_and_placeholder(self):
+        response = {
+            "config": {"iiif_url": "https://images.example/iiif/2"},
+            "data": [{
+                "id": 42, "title": "Tall work", "image_id": "abc",
+                "is_public_domain": True,
+                "thumbnail": {"width": 1000, "height": 2000, "lqip": "data:image/gif;base64,x"},
+            }],
+        }
+        wikidata = {"results": {"bindings": [{
+            "articId": {"value": "42"},
+            "image": {"value": "http://commons.wikimedia.org/wiki/Special:FilePath/Tall%20work.jpg"},
+        }]}}
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: (
+            wikidata if "query.wikidata.org" in url else response
+        )
+        try:
+            item = sources.aic("tall", 1)[0]
+        finally:
+            sources._get_json = original
+        self.assertEqual(item["thumb_url"],
+                         "https://commons.wikimedia.org/wiki/Special:FilePath/Tall%20work.jpg?width=843")
+        self.assertEqual(item["image_url"],
+                         "https://commons.wikimedia.org/wiki/Special:FilePath/Tall%20work.jpg")
+        self.assertEqual((item["width"], item["height"]), (1000, 2000))
+        self.assertTrue(item["placeholder_url"].startswith("data:image/gif"))
+
+    def test_aic_uses_hugging_face_preview_and_preserves_native_dimensions(self):
+        response = {
+            "config": {"iiif_url": "https://images.example/iiif/2"},
+            "data": [{
+                "id": 120172, "title": "Penitent Saint Peter", "image_id": "abc",
+                "is_public_domain": True,
+                "thumbnail": {"width": 1732, "height": 2250, "lqip": "data:image/gif;base64,x"},
+            }],
+        }
+        original_get = sources._get_json
+        original_commons = sources._aic_commons_images
+        original_hf = sources._hf_aic_images_for
+        sources._get_json = lambda *args, **kwargs: response
+        sources._aic_commons_images = lambda ids: {}
+        sources._hf_aic_images_for = lambda ids: {
+            "120172": {"src": "https://hf.test/preview.jpg", "width": 843, "height": 1095}
+        }
+        try:
+            item = sources.aic("peter", 1)[0]
+        finally:
+            sources._get_json = original_get
+            sources._aic_commons_images = original_commons
+            sources._hf_aic_images_for = original_hf
+        self.assertEqual(item["image_delivery"], "huggingface")
+        self.assertEqual(item["image_url"], "https://hf.test/preview.jpg")
+        self.assertEqual((item["preview_width"], item["preview_height"]), (843, 1095))
+        self.assertEqual((item["width"], item["height"]), (1732, 2250))
+        self.assertEqual(item["full_resolution_url"],
+                         "https://www.artic.edu/artworks/120172")
+
+    def test_aic_starts_commons_and_hugging_face_before_waiting(self):
+        response = {"data": [{
+            "id": 42, "title": "Work", "image_id": "abc",
+            "is_public_domain": True, "thumbnail": {},
+        }]}
+        commons_started = threading.Event()
+        hf_started = threading.Event()
+        originals = (sources._get_json, sources._aic_commons_images,
+                     sources._hf_aic_images_for, sources._wayback_aic_images_for)
+        sources._get_json = lambda *args, **kwargs: response
+
+        def commons(ids):
+            commons_started.set()
+            self.assertTrue(hf_started.wait(1))
+            return {}
+
+        def hugging_face(ids):
+            hf_started.set()
+            self.assertTrue(commons_started.wait(1))
+            return {}
+
+        sources._aic_commons_images = commons
+        sources._hf_aic_images_for = hugging_face
+        sources._wayback_aic_images_for = lambda artworks: {}
+        try:
+            sources.aic("work", 1)
+        finally:
+            (sources._get_json, sources._aic_commons_images,
+             sources._hf_aic_images_for,
+             sources._wayback_aic_images_for) = originals
+        self.assertTrue(commons_started.is_set() and hf_started.is_set())
+
+    def test_aic_rejects_monochrome_commons_when_current_aic_image_is_color(self):
+        artwork = {
+            "id": 36495,
+            "thumbnail": {"lqip": "data:image/gif;base64,current-color"},
+        }
+        original_aic_color = sources._data_image_colorfulness
+        original_commons_color = sources._remote_image_colorfulness
+        sources._data_image_colorfulness = lambda value: 0.31
+        sources._remote_image_colorfulness = lambda value: 0.01
+        try:
+            accepted = sources._aic_commons_is_current_quality(
+                artwork, "https://commons.test/old-monochrome.jpg"
+            )
+        finally:
+            sources._data_image_colorfulness = original_aic_color
+            sources._remote_image_colorfulness = original_commons_color
+        self.assertFalse(accepted)
+
+    def test_aic_keeps_commons_when_both_reproductions_are_monochrome(self):
+        artwork = {"id": 1, "thumbnail": {"lqip": "data:image/gif;base64,bw"}}
+        original_aic_color = sources._data_image_colorfulness
+        original_commons_color = sources._remote_image_colorfulness
+        sources._data_image_colorfulness = lambda value: 0.02
+        sources._remote_image_colorfulness = lambda value: 0.01
+        try:
+            accepted = sources._aic_commons_is_current_quality(
+                artwork, "https://commons.test/legitimate-monochrome.jpg"
+            )
+        finally:
+            sources._data_image_colorfulness = original_aic_color
+            sources._remote_image_colorfulness = original_commons_color
+        self.assertTrue(accepted)
+
+    def test_aic_uses_wayback_when_commons_and_hugging_face_are_unavailable(self):
+        response = {
+            "config": {"iiif_url": "https://images.example/iiif/2"},
+            "data": [{
+                "id": 36495, "title": "Liberation of Saint Peter from Prison",
+                "image_id": "current-color", "is_public_domain": True,
+                "thumbnail": {"width": 7127, "height": 7795, "lqip": "data:x"},
+            }],
+        }
+        originals = (sources._get_json, sources._aic_commons_images,
+                     sources._hf_aic_images_for, sources._wayback_aic_images_for)
+        sources._get_json = lambda *args, **kwargs: response
+        sources._aic_commons_images = lambda ids: {}
+        sources._hf_aic_images_for = lambda ids: {}
+        sources._wayback_aic_images_for = lambda artworks: {
+            "36495": {"src": "https://web.archive.test/color.jpg",
+                      "width": 1686, "height": 0}
+        }
+        try:
+            item = sources.aic("peter", 1)[0]
+        finally:
+            (sources._get_json, sources._aic_commons_images,
+             sources._hf_aic_images_for,
+             sources._wayback_aic_images_for) = originals
+        self.assertEqual(item["image_delivery"], "wayback")
+        self.assertEqual(item["image_url"], "https://web.archive.test/color.jpg")
+        self.assertEqual(item["preview_width"], 1686)
+        self.assertEqual((item["width"], item["height"]), (7127, 7795))
+
+    def test_normalization_keeps_aic_delivery_metadata_for_the_ui(self):
+        item = server.normalize_result(result(
+            "aic", source_id="120172", image_delivery="huggingface",
+            full_resolution_url="https://www.artic.edu/artworks/120172",
+            preview_width=843, preview_height=1095,
+        ))
+        self.assertEqual(item["image_delivery"], "huggingface")
+        self.assertEqual((item["preview_width"], item["preview_height"]), (843, 1095))
+        self.assertIn("120172", item["full_resolution_url"])
+        self.assertEqual(item["preview_click_action"], "visit_website")
+        self.assertEqual(item["preview_click_url"], item["full_resolution_url"])
+
+    def test_normalization_opens_direct_full_image_when_available(self):
+        item = server.normalize_result(result("met", source_id="17"))
+        self.assertEqual(item["preview_click_action"], "open_full_image")
+        self.assertEqual(item["preview_click_url"], item["image_url"])
+
+    def test_normalization_opens_aic_commons_full_image_directly(self):
+        item = server.normalize_result(result(
+            "aic", source_id="42", image_delivery="commons",
+            full_resolution_url="https://www.artic.edu/artworks/42",
+        ))
+        self.assertEqual(item["preview_click_action"], "open_full_image")
+        self.assertEqual(item["preview_click_url"], item["image_url"])
+
+    def test_source_batch_returns_only_the_requested_slice(self):
+        items = [result("met", f"Item {index}", str(index)) for index in range(30)]
+        adapters = {"met": lambda query, need: items[:need]}
+        group = server.search_batch("met", "item", 10, 10, adapters)
+        self.assertEqual([item["source_id"] for item in group["results"]],
+                         [str(index) for index in range(10, 20)])
+        self.assertFalse(group["exhausted"])
+    def test_identical_live_batches_are_coalesced_and_cached(self):
+        original = sources.ADAPTERS["met"]
+        calls = []
+        adapter_started = threading.Event()
+        release_adapter = threading.Event()
+
+        def adapter(query, need):
+            calls.append((query, need))
+            adapter_started.set()
+            release_adapter.wait(1)
+            return [result("met", "Cached", "cache-test")]
+
+        sources.ADAPTERS["met"] = adapter
+        with server.SEARCH_BATCH_CACHE_LOCK:
+            server.SEARCH_BATCH_CACHE.clear()
+            server.SEARCH_BATCH_INFLIGHT.clear()
+        groups = []
+        try:
+            threads = [threading.Thread(
+                target=lambda: groups.append(server.search_batch(
+                    "met", "cache test", 0,
+                )),
+            ) for _ in range(2)]
+            threads[0].start()
+            self.assertTrue(adapter_started.wait(1))
+            threads[1].start()
+            release_adapter.set()
+            for thread in threads:
+                thread.join(2)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(len(groups), 2)
+            groups[0]["results"][0]["title"] = "Mutated"
+            self.assertEqual(groups[1]["results"][0]["title"], "Cached")
+        finally:
+            release_adapter.set()
+            sources.ADAPTERS["met"] = original
+            with server.SEARCH_BATCH_CACHE_LOCK:
+                server.SEARCH_BATCH_CACHE.clear()
+                server.SEARCH_BATCH_INFLIGHT.clear()
+
+    def test_cancelled_batch_stops_before_adapter_work(self):
+        calls = []
+        with self.assertRaises(server.SearchCancelled):
+            server.search_batch(
+                "met", "item", 0, adapters={"met": lambda query, need: calls.append(1)},
+                cancelled=lambda: True,
+            )
+        self.assertEqual(calls, [])
+
+    def test_batch_keeps_images_regardless_of_dimensions(self):
+        items = [result("met", "Large", "1", width=1200, height=400),
+                 result("met", "Small", "2", width=500, height=600)]
+        adapters = {"met": lambda query, need: items}
+        group = server.search_batch("met", "item", 0, 10, adapters)
+        self.assertEqual([item["title"] for item in group["results"]], ["Large", "Small"])
+
+    def test_aic_keeps_native_and_preview_dimensions(self):
+        item = result(
+            "aic", "Saint Peter", "93049", width=4077, height=6116,
+            image_delivery="huggingface", preview_width=843, preview_height=1265,
+        )
+        group = server.search_batch(
+            "aic", "saint peter", 0, 10,
+            {"aic": lambda query, need: [item]},
+        )
+        self.assertEqual([result["source_id"] for result in group["results"]], ["93049"])
+        self.assertEqual(group["results"][0]["width"], 4077)
+        self.assertEqual(group["results"][0]["preview_width"], 843)
+
+
+class HighResolutionCacheTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.original_cache_directory = server.HIGH_RES_CACHE_DIR
+        server.HIGH_RES_CACHE_DIR = Path(self.temporary_directory.name)
+        with server.HIGH_RES_CACHE_LOCK:
+            server.HIGH_RES_CACHE_INFLIGHT.clear()
+
+    def tearDown(self):
+        server.HIGH_RES_CACHE_DIR = self.original_cache_directory
+        with server.HIGH_RES_CACHE_LOCK:
+            server.HIGH_RES_CACHE_INFLIGHT.clear()
+        self.temporary_directory.cleanup()
+
+    def test_second_request_reads_full_image_from_disk(self):
+        item = server.normalize_result(result("met", source_id="cached"))
+        downloads = []
+
+        def downloader(value):
+            downloads.append(value["id"])
+            return b"\xff\xd8\xfffull-image", "image/jpeg"
+
+        first = server.cached_high_res_image(item, downloader)
+        second = server.cached_high_res_image(item, downloader)
+
+        self.assertFalse(first[2])
+        self.assertTrue(second[2])
+        self.assertEqual(second[:2], first[:2])
+        self.assertEqual(downloads, [item["id"]])
+
+    def test_cache_keeps_only_five_most_recent_images(self):
+        items = [
+            server.normalize_result(result("met", source_id=str(index)))
+            for index in range(6)
+        ]
+        downloader = lambda item: (b"\x89PNG\r\n\x1a\nimage", "image/png")
+
+        for item in items:
+            server.cached_high_res_image(item, downloader)
+            time.sleep(0.002)
+
+        cached_files = list(server.HIGH_RES_CACHE_DIR.glob("*.png"))
+        oldest_key = server._high_res_cache_key(items[0]["image_url"])
+        self.assertEqual(len(cached_files), 5)
+        self.assertFalse((server.HIGH_RES_CACHE_DIR / f"{oldest_key}.png").exists())
+
+
+class SimilarityTests(unittest.TestCase):
+    def feature(self, color, gray, bits, aspect=0.0):
+        color = np.array(color, dtype="float32")
+        gray = np.array(gray, dtype="float32")
+        color /= np.linalg.norm(color)
+        gray /= np.linalg.norm(gray)
+        return {"color": color, "gray": gray,
+                "dhash": np.array(bits, dtype=bool), "aspect": aspect}
+
+    def test_identical_visual_features_rank_above_different_features(self):
+        target = self.feature([1, 0], [1, 0], [1, 0, 1, 0])
+        same = self.feature([1, 0], [1, 0], [1, 0, 1, 0])
+        different = self.feature([0, 1], [0, 1], [0, 1, 0, 1], 1.2)
+        self.assertGreater(
+            visual_similarity.feature_similarity(target, same),
+            visual_similarity.feature_similarity(target, different),
+        )
+
+    def test_high_siglip_match_accepts_scan_color_shift(self):
+        original = visual_similarity.result_feature_similarity
+        visual_similarity.result_feature_similarity = lambda first, second: 0.74
+        item = {"width": 1200, "height": 900}
+        try:
+            self.assertTrue(visual_similarity.likely_same_image(item, item, 0.983))
+            self.assertFalse(visual_similarity.likely_same_image(item, item, 0.960))
+        finally:
+            visual_similarity.result_feature_similarity = original
+
+    def test_redraw_requires_exceptionally_close_structure(self):
+        original = visual_similarity.result_feature_similarity
+        item = {"width": 1200, "height": 900}
+        try:
+            visual_similarity.result_feature_similarity = lambda first, second: 0.960
+            self.assertTrue(visual_similarity.likely_same_image(item, item, 0.918))
+            visual_similarity.result_feature_similarity = lambda first, second: 0.940
+            self.assertFalse(visual_similarity.likely_same_image(item, item, 0.918))
+        finally:
+            visual_similarity.result_feature_similarity = original
+
+    def test_siglip_download_retries_original_after_thumbnail_failure(self):
+        original = semantic_embeddings._download_image
+        calls = []
+        semantic_embeddings._download_image = lambda url: calls.append(url) or (
+            "image" if url.endswith("original.jpg") else None
+        )
+        try:
+            image = semantic_embeddings._download_item_image({
+                "thumb_url": "https://i0.wp.com/preview.jpg",
+                "image_url": "https://gnosisvn.org/original.jpg",
+            })
+            self.assertEqual(image, "image")
+            self.assertEqual(calls, [
+                "https://i0.wp.com/preview.jpg",
+                "https://gnosisvn.org/original.jpg",
+            ])
+        finally:
+            semantic_embeddings._download_image = original
+
+    def test_similarity_bounds_perceptual_download_candidate_pool(self):
+        items = [
+            server.normalize_result(result("met", "Target", "target"), 0),
+            *[
+                server.normalize_result(
+                    result("met", f"Candidate {index}", str(index)), index,
+                )
+                for index in range(60)
+            ],
+        ]
+        original_item_feature = visual_similarity._item_feature
+        original_image_similarity = semantic_embeddings.image_similarity
+        calls = []
+        visual_similarity._item_feature = lambda item: calls.append(item["id"]) or None
+        semantic_embeddings.image_similarity = lambda first, second: (
+            1.0 - int(second["source_id"]) / 100
+        )
+        try:
+            ranked = visual_similarity.rank_similar(items, items[0]["id"], limit=12)
+        finally:
+            visual_similarity._item_feature = original_item_feature
+            semantic_embeddings.image_similarity = original_image_similarity
+        self.assertEqual(len(ranked), 12)
+        # One target plus only the nominated candidate pool may request a
+        # perceptual fingerprint, regardless of total search size.
+        self.assertLessEqual(
+            len(calls), visual_similarity.MAX_PERCEPTUAL_CANDIDATES + 1,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

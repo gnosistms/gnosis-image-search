@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Search museum collections with a local SigLIP and PAMELA ranking model.">
+  <title>Gnosis Image Search</title>
+  <link rel="icon" href="gnosis-caduceus.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <nav><a class="wordmark" href="./"><img src="gnosis-caduceus.svg" alt=""> Gnosis Image Search</a><a href="https://github.com/gnosistms/gnosis-image-search">GitHub</a></nav>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Museum search, intelligently ordered</div>
+      <h1>Find images worth looking at.</h1>
+      <p class="lead">Search leading public museum collections in one place. Results are ranked locally using image resolution and a visual criterion model trained from human comparisons.</p>
+      <div class="download-block">
+        <a id="download" class="download" href="https://github.com/gnosistms/gnosis-image-search/releases/latest">Download latest release</a>
+        <p id="platform-note">Detecting your operating system…</p>
+      </div>
+      <p class="privacy">Your model, preferences, and embedding cache stay on your computer.</p>
+    </section>
+    <section class="preview" aria-label="Application preview">
+      <div class="window-bar"><i></i><i></i><i></i><span>Gnosis Image Search</span></div>
+      <div class="mock-toolbar"><b><img src="gnosis-caduceus.svg" alt=""> Gnosis</b><div>Saint Peter</div><button>Collections</button></div>
+      <div class="mosaic"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    </section>
+    <section class="features">
+      <article><h2>One search</h2><p>Explore open-access works from museums, libraries, archives, and Gnosis VN without jumping between catalogs.</p></article>
+      <article><h2>Local intelligence</h2><p>SigLIP and the PAMELA criterion model run on your Mac. Application updates do not replace or redownload the model.</p></article>
+      <article><h2>Built for originals</h2><p>Image quality and native dimensions matter, with direct links back to the institution and downloadable source.</p></article>
+    </section>
+  </main>
+  <footer><span>Gnosis Image Search</span><span>Source available · Museum data remains with its providers</span></footer>
+  <script src="download.js"></script>
+</body>
+</html>
