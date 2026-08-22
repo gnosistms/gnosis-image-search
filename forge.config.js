@@ -1,4 +1,9 @@
-const signingEnabled = Boolean(process.env.APPLE_TEAM_ID);
+const signingIdentity = process.env.APPLE_SIGNING_IDENTITY;
+const notarizationEnabled = Boolean(
+  process.env.APPLE_NOTARIZATION_KEY_PATH &&
+  process.env.APPLE_API_KEY &&
+  process.env.APPLE_API_ISSUER
+);
 
 module.exports = {
   packagerConfig: {
@@ -8,17 +13,19 @@ module.exports = {
     appCategoryType: 'public.app-category.reference',
     icon: 'assets/icon',
     asar: true,
-    ...(signingEnabled ? {
+    ...(signingIdentity ? {
       osxSign: {
-        identity: 'Developer ID Application',
+        identity: signingIdentity,
         hardenedRuntime: true,
         entitlements: 'assets/entitlements.mac.plist',
         'entitlements-inherit': 'assets/entitlements.mac.plist'
-      },
+      }
+    } : {}),
+    ...(notarizationEnabled ? {
       osxNotarize: {
-        appleId: process.env.APPLE_ID,
-        appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
-        teamId: process.env.APPLE_TEAM_ID
+        appleApiKey: process.env.APPLE_NOTARIZATION_KEY_PATH,
+        appleApiKeyId: process.env.APPLE_API_KEY,
+        appleApiIssuer: process.env.APPLE_API_ISSUER
       }
     } : {}),
     ignore: [
