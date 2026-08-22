@@ -31,8 +31,8 @@ function isSignableCode(filePath) {
 
 module.exports = {
   packagerConfig: {
-    name: 'Gnosis Image Search',
-    executableName: 'Gnosis Image Search',
+    name: 'Gnosis Images',
+    executableName: 'Gnosis Images',
     appBundleId: 'org.gnosis.image-search',
     appCategoryType: 'public.app-category.reference',
     icon: 'assets/icon',

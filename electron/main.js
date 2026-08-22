@@ -1,4 +1,4 @@
-const { app, autoUpdater, BrowserWindow, dialog, shell } = require('electron');
+const { app, autoUpdater, BrowserWindow, dialog, Menu, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const http = require('node:http');
 const https = require('node:https');
@@ -6,11 +6,38 @@ const net = require('node:net');
 const path = require('node:path');
 const { reconcileModelConfiguration } = require('./model-config');
 
-const APP_NAME = 'Gnosis Image Search';
+const APP_NAME = 'Gnosis Images';
+const APP_DATA_NAME = 'Gnosis Image Search';
 // In development Electron otherwise uses the executable name ("Electron") for
 // the macOS application menu. Set this before the app becomes ready so the menu
 // bar and system-provided menu items use the product name in every build mode.
+app.setPath('userData', path.join(app.getPath('appData'), APP_DATA_NAME));
 app.setName(APP_NAME);
+
+function installApplicationMenu() {
+  if (process.platform !== 'darwin') return;
+  const menu = Menu.buildFromTemplate([
+    {
+      label: APP_NAME,
+      submenu: [
+        { role: 'about', label: `About ${APP_NAME}` },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide', label: `Hide ${APP_NAME}` },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit', label: `Quit ${APP_NAME}` }
+      ]
+    },
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' }
+  ]);
+  Menu.setApplicationMenu(menu);
+}
 
 let backend = null;
 let mainWindow = null;
@@ -63,7 +90,7 @@ async function checkForUpdatesAtStartup() {
     const response = await dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: 'Update available',
-      message: `Gnosis Image Search ${release.tag_name.replace(/^v/, '')} is available.`,
+      message: `Gnosis Images ${release.tag_name.replace(/^v/, '')} is available.`,
       detail: 'Would you like to download and install it now? Your image model and embedding cache are stored separately and will not be downloaded again.',
       buttons: ['Update now', 'Later'],
       defaultId: 0,
@@ -79,7 +106,7 @@ async function checkForUpdatesAtStartup() {
         dialog.showMessageBox(mainWindow, {
           type: 'error',
           title: 'Update could not be installed',
-          message: 'Gnosis Image Search could not download or install the update.',
+          message: 'Gnosis Images could not download or install the update.',
           detail: 'You can continue using this version and try again the next time the app starts.',
           buttons: ['OK']
         });
@@ -227,10 +254,13 @@ else {
     }
   });
   app.whenReady().then(() => {
-    if (process.platform === 'darwin') app.dock.setIcon(APP_ICON_PATH);
+    if (process.platform === 'darwin') {
+      app.dock.setIcon(APP_ICON_PATH);
+      installApplicationMenu();
+    }
     return createApplication();
   }).catch((error) => {
-    dialog.showErrorBox('Gnosis Image Search could not start', error.stack || String(error));
+    dialog.showErrorBox('Gnosis Images could not start', error.stack || String(error));
     app.quit();
   });
 }

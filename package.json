@@ -1,6 +1,6 @@
 {
   "name": "gnosis-image-search",
-  "productName": "Gnosis Image Search",
+  "productName": "Gnosis Images",
   "version": "0.1.0",
   "description": "Museum image search ranked by the PAMELA criterion model",
   "main": "electron/main.js",

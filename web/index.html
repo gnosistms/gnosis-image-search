@@ -4,13 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data: blob:; connect-src 'self'; style-src 'self'; script-src 'self'">
-  <title>Gnosis Image Search</title>
+  <title>Gnosis Images</title>
   <link rel="icon" href="/gnosis-caduceus.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Gnosis Image Search home"><img class="brand-mark" src="/gnosis-caduceus.svg" alt=""></a>
     <form id="search-form" class="search-form">
       <label class="sr-only" for="query">Search images</label>
       <input id="query" type="search" maxlength="240" placeholder="Search images" autocomplete="off">
@@ -28,7 +27,6 @@
       </div>
     </div>
     <div id="source-options" class="source-options"></div>
-    <p class="adaptive-note">Results load in rounds of 10. A collection stops when its latest 10 add nothing to the combined top 50.</p>
   </section>
 
   <div id="search-status" class="search-status">Search public museum, archive, and Gnosis VN images</div>
@@ -38,7 +36,7 @@
       <div class="hero-copy">
         <div class="hero-brand">
           <img src="/gnosis-caduceus.svg" alt="">
-          <span>Gnosis Image Search</span>
+          <span>Gnosis Images</span>
         </div>
         <h1>Search the world's best<br>museum websites.</h1>
         <p>Get high resolution images with creative commons licenses—ready to illustrate beautiful books.</p>
@@ -82,13 +80,12 @@
       </a>
     </div>
     <div class="detail-info">
-      <h1 id="detail-title"></h1>
-      <p id="detail-description" class="detail-description"></p>
       <div class="detail-meta">
         <span id="detail-license"></span>
         <span id="detail-size"></span>
       </div>
-      <a id="detail-link" class="visit-link" target="_blank" rel="noopener noreferrer">Visit source site ↗</a>
+      <h1 id="detail-title"></h1>
+      <p id="detail-description" class="detail-description"></p>
     </div>
     <section id="alternate-section" class="similar-section" hidden>
       <h2>Other versions</h2>

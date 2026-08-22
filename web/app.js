@@ -1,7 +1,9 @@
 const form = document.querySelector('#search-form');
 const queryInput = document.querySelector('#query');
+const searchButton = form.querySelector('.search-button');
 const heroForm = document.querySelector('#hero-search-form');
 const heroQueryInput = document.querySelector('#hero-query');
+const heroSearchButton = heroForm.querySelector('button');
 const gallery = document.querySelector('#gallery');
 const emptyState = document.querySelector('#empty-state');
 const statusLine = document.querySelector('#search-status');
@@ -21,7 +23,6 @@ const detailSource = document.querySelector('#detail-source');
 const detailDescription = document.querySelector('#detail-description');
 const detailLicense = document.querySelector('#detail-license');
 const detailSize = document.querySelector('#detail-size');
-const detailLink = document.querySelector('#detail-link');
 const similarGrid = document.querySelector('#similar-grid');
 const similarStatus = document.querySelector('#similar-status');
 const alternateSection = document.querySelector('#alternate-section');
@@ -54,10 +55,41 @@ function updateSourceCount() {
   heroSourceCount.textContent = `· ${count} selected`;
 }
 
+function updateSearchControl(input, button) {
+  const hasValue = input.value.length > 0;
+  button.type = hasValue ? 'button' : 'submit';
+  button.classList.toggle('is-clear', hasValue);
+  button.textContent = hasValue ? '×' : '⌕';
+  button.setAttribute('aria-label', hasValue ? 'Clear search' : 'Search');
+}
+
+function setupSearchControl(formElement, input, button) {
+  input.addEventListener('input', () => updateSearchControl(input, button));
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && input.value.trim()) {
+      event.preventDefault();
+      formElement.requestSubmit();
+    }
+  });
+  button.addEventListener('click', event => {
+    if (!button.classList.contains('is-clear')) return;
+    event.preventDefault();
+    input.value = '';
+    updateSearchControl(input, button);
+    input.focus();
+  });
+  updateSearchControl(input, button);
+}
+
 function setSourcePanelOpen(open) {
   sourcePanel.hidden = !open;
   toggleSources.setAttribute('aria-expanded', String(open));
   heroToggleSources.setAttribute('aria-expanded', String(open));
+}
+
+function setPlainStatus(text) {
+  statusLine.removeAttribute('aria-label');
+  statusLine.textContent = text;
 }
 
 async function getJson(url, options = {}) {
@@ -322,14 +354,30 @@ function applySnapshot(snapshot, sequence) {
   const policies = Object.values(snapshot.source_policy || {});
   const active = policies.filter(policy => policy.continue).length;
   const searched = policies.length - active;
-  const progress = policies.length
-    ? ` · ${searched} of ${policies.length} collections searched`
+  const resultText = `${snapshot.results.length} ranked images`;
+  const progressText = policies.length
+    ? `${searched} of ${policies.length} collections searched`
     : '';
   const errorText = errors
-    ? ` · ${errors} unavailable (${unavailable.map(collectionLabel).join(', ')})`
+    ? `${errors} unavailable (${unavailable.map(collectionLabel).join(', ')})`
     : '';
-  const rankingText = snapshot.ranking_mode === 'pamela' ? ' · size × PAMELA' : '';
-  statusLine.textContent = `${snapshot.results.length} ranked images${rankingText}${progress}${errorText}`;
+  const resultStatus = document.createElement('span');
+  resultStatus.className = 'status-results';
+  resultStatus.textContent = resultText;
+  statusLine.replaceChildren(resultStatus);
+  if (progressText) {
+    const progressStatus = document.createElement('span');
+    progressStatus.className = 'status-progress';
+    progressStatus.textContent = progressText;
+    statusLine.append(progressStatus);
+  }
+  if (errorText) {
+    const errorStatus = document.createElement('span');
+    errorStatus.className = 'status-errors';
+    errorStatus.textContent = errorText;
+    statusLine.append(errorStatus);
+  }
+  statusLine.setAttribute('aria-label', [resultText, progressText, errorText].filter(Boolean).join(' · '));
 }
 
 async function searchSourceBatch(source, offset, sequence, sessionId) {
@@ -386,11 +434,13 @@ async function runSearch(query) {
   if (!selected.length) {
     setSourcePanelOpen(true);
     heroSourceCount.textContent = '· select at least one';
-    statusLine.textContent = 'Select at least one collection.';
+    setPlainStatus('Select at least one collection.');
     return;
   }
   queryInput.value = query;
   heroQueryInput.value = query;
+  updateSearchControl(queryInput, searchButton);
+  updateSearchControl(heroQueryInput, heroSearchButton);
   document.body.classList.add('search-active');
   setSourcePanelOpen(false);
   const sequence = ++currentSearchSequence;
@@ -404,7 +454,7 @@ async function runSearch(query) {
   gallery.replaceChildren();
   galleryTiles.clear();
   emptyState.hidden = true;
-  statusLine.textContent = `Searching ${selected.length} collections…`;
+  setPlainStatus(`Searching ${selected.length} collections…`);
 
   try {
     const start = await getJson(
@@ -434,13 +484,13 @@ async function runSearch(query) {
       for (const source of active) offsets[source] += 10;
     }
     if (sequence === currentSearchSequence && failures.size) {
-      statusLine.textContent = failureStatus(failures);
+      setPlainStatus(failureStatus(failures));
     }
     if (sequence === currentSearchSequence && currentResults.length === 0) {
       gallery.innerHTML = '<p class="notice">No matching images found.</p>';
     }
   } catch (error) {
-    if (sequence === currentSearchSequence) statusLine.textContent = error.message;
+    if (sequence === currentSearchSequence) setPlainStatus(error.message);
   }
 }
 
@@ -461,7 +511,6 @@ async function openDetails(id, previewImage) {
   detailDescription.textContent = item.description || 'No additional description was supplied by this collection.';
   detailLicense.textContent = item.license;
   detailSize.textContent = '';
-  detailLink.href = item.page_url || item.image_url;
   const previewAction = item.preview_click_action === 'visit_website'
     ? 'visit website'
     : 'open full sized image';
@@ -544,6 +593,9 @@ function closeDetails() {
   gallery.querySelectorAll('.selected').forEach(tile => tile.classList.remove('selected'));
 }
 
+setupSearchControl(form, queryInput, searchButton);
+setupSearchControl(heroForm, heroQueryInput, heroSearchButton);
+
 form.addEventListener('submit', event => {
   event.preventDefault();
   const query = queryInput.value.trim();
@@ -586,4 +638,4 @@ document.querySelectorAll('[data-query]').forEach(button => {
   });
 });
 
-loadSources().catch(error => { statusLine.textContent = error.message; });
+loadSources().catch(error => { setPlainStatus(error.message); });
