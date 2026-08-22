@@ -37,15 +37,19 @@ module.exports = {
     appCategoryType: 'public.app-category.reference',
     icon: 'assets/icon',
     asar: true,
-    ...(signingIdentity ? {
-      osxSign: {
-        identity: signingIdentity,
-        hardenedRuntime: true,
+    osxSign: {
+      identity: signingIdentity || '-',
+      hardenedRuntime: Boolean(signingIdentity),
+      ignore: filePath => !isSignableCode(filePath),
+      ...(signingIdentity ? {
         entitlements: 'assets/entitlements.mac.plist',
-        'entitlements-inherit': 'assets/entitlements.mac.plist',
-        ignore: filePath => !isSignableCode(filePath)
-      }
-    } : {}),
+        'entitlements-inherit': 'assets/entitlements.mac.plist'
+      } : {
+        // Keep local packages internally valid without pretending they are a
+        // notarizable Developer ID release.
+        identityValidation: false
+      })
+    },
     ...(notarizationEnabled ? {
       osxNotarize: {
         appleApiKey: process.env.APPLE_NOTARIZATION_KEY_PATH,
@@ -69,7 +73,27 @@ module.exports = {
     {
       name: '@electron-forge/maker-dmg',
       config: {
-        format: 'ULFO'
+        format: 'ULFO',
+        title: 'Gnosis Images Installer',
+        icon: 'assets/icon.icns',
+        background: 'assets/dmg-background.png',
+        iconSize: 112,
+        contents: options => [
+          {
+            x: 186,
+            y: 300,
+            type: 'file',
+            path: options.appPath,
+            name: 'Gnosis Images.app'
+          },
+          { x: 472, y: 300, type: 'link', path: '/Applications' }
+        ],
+        additionalDMGOptions: {
+          'background-color': '#f7f2ed',
+          window: {
+            size: { width: 658, height: 498 }
+          }
+        }
       }
     },
     {
