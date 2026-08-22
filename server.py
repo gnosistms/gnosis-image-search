@@ -477,56 +477,108 @@ def stream_search_round(
     session: "SearchSession",
     batch_search: Callable = search_batch,
 ):
-    """Search every active collection concurrently and yield NDJSON events."""
-    policy = session.continuation_policy()
-    active = [
-        source_name for source_name in session.selected_sources
-        if policy[source_name]["continue"] and not session.source_cancelled(source_name)
-    ]
-    if not active:
-        yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
-        return
+    """Stream independent per-collection pipelines plus background enrichment."""
+    search_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=len(session.selected_sources),
+    )
+    enrichment_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(4, len(session.selected_sources)),
+    )
+    work = {}
 
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(active))
-    futures = {}
-    for source_name in active:
+    def submit_search(source_name: str):
+        policy = session.continuation_policy()[source_name]
+        if not policy["continue"] or session.source_cancelled(source_name):
+            return
         state = session.source_states[source_name]
         batch_size = (
             PREVIEW_BATCH_SIZES[state["rounds"]]
             if state["rounds"] < len(PREVIEW_BATCH_SIZES)
             else BATCH_SIZE
         )
-        future = executor.submit(
+        future = search_executor.submit(
             batch_search,
             source_name,
             session.query,
-            policy[source_name]["fetched"],
+            policy["fetched"],
             batch_size,
             cancelled=lambda name=source_name: session.source_cancelled(name),
             resolve_dimensions=False,
         )
-        futures[future] = (source_name, batch_size)
+        work[future] = {
+            "kind": "search",
+            "source": source_name,
+            "offset": policy["fetched"],
+            "started": time.monotonic(),
+        }
 
-    pending = set(futures)
-    round_items = []
-    deadline = time.monotonic() + SOURCE_BATCH_TIMEOUT_SECONDS
+    def submit_enrichment(items: list[dict]):
+        if not items:
+            return
+        future = enrichment_executor.submit(score_search_results, session.query, items)
+        work[future] = {"kind": "enrichment", "started": time.monotonic()}
+
+    for source_name in session.selected_sources:
+        submit_search(source_name)
+
     try:
-        while pending and not session.cancelled:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            completed, pending = concurrent.futures.wait(
-                pending,
-                timeout=remaining,
+        while work and not session.cancelled:
+            now = time.monotonic()
+            search_deadlines = [
+                details["started"] + SOURCE_BATCH_TIMEOUT_SECONDS
+                for details in work.values() if details["kind"] == "search"
+            ]
+            timeout = max(0.0, min(search_deadlines) - now) if search_deadlines else None
+            completed, _pending = concurrent.futures.wait(
+                set(work),
+                timeout=timeout,
                 return_when=concurrent.futures.FIRST_COMPLETED,
             )
             if not completed:
-                break
+                overdue = [
+                    future for future, details in work.items()
+                    if details["kind"] == "search"
+                    and now - details["started"] >= SOURCE_BATCH_TIMEOUT_SECONDS
+                ]
+                for future in overdue:
+                    details = work.pop(future)
+                    source_name = details["source"]
+                    group = {
+                        "source": source_name,
+                        "results": [],
+                        "count": 0,
+                        "offset": details["offset"],
+                        "exhausted": True,
+                        "error": (
+                            f"TimeoutError: collection search exceeded "
+                            f"{SOURCE_BATCH_TIMEOUT_SECONDS} seconds"
+                        ),
+                    }
+                    snapshot = session.merge_batch(
+                        group, coalesce_ranking=False, score_results=False,
+                    )
+                    session.cancel_source(source_name)
+                    future.cancel()
+                    yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
+                continue
+
             for future in completed:
-                source_name, _batch_size = futures[future]
+                details = work.pop(future)
+                if details["kind"] == "enrichment":
+                    try:
+                        scored_items = future.result()
+                    except Exception:
+                        continue
+                    if not session.cancelled:
+                        yield {
+                            "type": "rerank",
+                            "snapshot": session.merge_scored_results(scored_items),
+                        }
+                    continue
+
+                source_name = details["source"]
                 try:
                     group = future.result()
-                    round_items.extend(group["results"])
                     snapshot = session.merge_batch(
                         group, coalesce_ranking=False, score_results=False,
                     )
@@ -537,46 +589,25 @@ def stream_search_round(
                         "source": source_name,
                         "results": [],
                         "count": 0,
-                        "offset": policy[source_name]["fetched"],
+                        "offset": details["offset"],
                         "exhausted": True,
                         "error": f"{type(exc).__name__}: {exc}",
                     }
-                    snapshot = session.merge_batch(group, coalesce_ranking=True)
+                    snapshot = session.merge_batch(
+                        group, coalesce_ranking=False, score_results=False,
+                    )
+
+                # Start this collection's next retrieval before yielding or
+                # beginning its slower dimension/model enrichment.
+                submit_search(source_name)
+                submit_enrichment(group["results"])
                 yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
-
-        for future in pending:
-            source_name, _batch_size = futures[future]
-            if session.cancelled:
-                future.cancel()
-                continue
-            group = {
-                "source": source_name,
-                "results": [],
-                "count": 0,
-                "offset": policy[source_name]["fetched"],
-                "exhausted": True,
-                "error": (
-                    f"TimeoutError: collection search exceeded "
-                    f"{SOURCE_BATCH_TIMEOUT_SECONDS} seconds"
-                ),
-            }
-            snapshot = session.merge_batch(group, coalesce_ranking=True)
-            session.cancel_source(source_name)
-            future.cancel()
-            yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
-
-        if round_items and not session.cancelled:
-            scored_items = score_search_results(session.query, round_items)
-            if not session.cancelled:
-                yield {
-                    "type": "rerank",
-                    "snapshot": session.merge_scored_results(scored_items),
-                }
 
         if not session.cancelled:
             yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
     finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+        search_executor.shutdown(wait=False, cancel_futures=True)
+        enrichment_executor.shutdown(wait=False, cancel_futures=True)
 
 
 class SearchSession:

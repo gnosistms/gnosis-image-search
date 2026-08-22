@@ -98,14 +98,19 @@ def _metadata_score_result(query: str, item: dict) -> tuple[float, str]:
     return round(score, 5), ", ".join(reasons[:3]) or "provider relevance"
 
 
+def pixel_size_score(width: int, height: int) -> float:
+    """Compress pixel area logarithmically so resolution cannot dominate rank."""
+    return math.log2(width * height) if width > 0 and height > 0 else 0.0
+
+
 def resolution_relevance_score(item: dict) -> tuple[float, float, float] | None:
-    """Return sqrt(pixel area), SigLIP relevance, and their product."""
+    """Return log2(pixel area), SigLIP relevance, and their product."""
     semantic_score = item.get("semantic_score")
     if not isinstance(semantic_score, (int, float)):
         return None
     width = max(int(item.get("width") or 0), 0)
     height = max(int(item.get("height") or 0), 0)
-    size_score = math.sqrt(width * height) if width and height else 0.0
+    size_score = pixel_size_score(width, height)
     relevance_score = max(0.0, min(float(semantic_score), 1.0))
     return size_score, relevance_score, size_score * relevance_score
 
@@ -115,7 +120,7 @@ def score_result(query: str, item: dict) -> tuple[float, str]:
     if item.get("pamela_rerank") and isinstance(pamela_score, (int, float)):
         width = max(int(item.get("width") or 0), 0)
         height = max(int(item.get("height") or 0), 0)
-        size_score = math.sqrt(width * height) if width and height else 0.0
+        size_score = pixel_size_score(width, height)
         beauty_score = max(0.0, min(float(pamela_score), 1.0))
         score = size_score * beauty_score
         return round(score, 5), (

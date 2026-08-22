@@ -1,4 +1,5 @@
 import json
+import math
 import threading
 import time
 import tempfile
@@ -97,14 +98,14 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(len(ranked), 1)
         self.assertEqual(ranked[0]["id"], upscale["id"])
 
-    def test_rank_is_sqrt_pixel_area_times_siglip_relevance(self):
+    def test_rank_is_log2_pixel_area_times_siglip_relevance(self):
         item = server.normalize_result(
             result("nga", "Object", "2", width=2000, height=500), 0,
         )
         item["semantic_score"] = 0.75
         score, reason = ranker.score_result("subject", item)
-        self.assertEqual(score, 750.0)
-        self.assertIn("size 1000.00", reason)
+        self.assertAlmostEqual(score, math.log2(2000 * 500) * 0.75, places=5)
+        self.assertIn(f"size {math.log2(2000 * 500):.2f}", reason)
         self.assertIn("relevance 0.750", reason)
 
     def test_resolution_and_relevance_both_affect_rank(self):
@@ -118,7 +119,7 @@ class RankingTests(unittest.TestCase):
         relevant["semantic_score"] = 0.75
         ranked = ranker.rank_results("subject", [large, relevant])
         self.assertEqual(ranked[0]["id"], relevant["id"])
-        self.assertEqual(ranked[0]["size_score"], 1024.0)
+        self.assertEqual(ranked[0]["size_score"], 20.0)
         self.assertEqual(ranked[0]["relevance_score"], 0.75)
 
     def test_pamela_mode_ranks_as_size_times_criterion_score(self):
@@ -131,7 +132,7 @@ class RankingTests(unittest.TestCase):
         ranked = ranker.rank_results("subject", [rejected, preferred])
         self.assertEqual(ranked[0]["id"], preferred["id"])
         self.assertIn("PAMELA criteria", ranked[0]["rank_reason"])
-        expected = (1200 * 800) ** 0.5
+        expected = math.log2(1200 * 800)
         self.assertAlmostEqual(ranked[0]["rank_score"], expected, places=4)
 
 
@@ -1387,7 +1388,8 @@ class BatchTests(unittest.TestCase):
         item = server.normalize_result(result(
             "met", "Immediate", "fast", width=0, height=0,
         ))
-        enrichment_calls = []
+        enrichment_started = threading.Event()
+        release_enrichment = threading.Event()
         original_enrichment = server.score_search_results
 
         def batch_search(
@@ -1400,18 +1402,62 @@ class BatchTests(unittest.TestCase):
                 "offset": offset, "count": 1, "exhausted": False,
             }
 
-        server.score_search_results = lambda query, items: (
-            enrichment_calls.append(list(items)) or items
-        )
+        def blocked_enrichment(query, items):
+            enrichment_started.set()
+            release_enrichment.wait(2)
+            return items
+
+        server.score_search_results = blocked_enrichment
         events = server.stream_search_round(session, batch_search)
         try:
             first = next(events)
             self.assertEqual(first["type"], "snapshot")
             self.assertEqual(first["snapshot"]["results"][0]["title"], "Immediate")
-            self.assertEqual(enrichment_calls, [])
+            self.assertTrue(enrichment_started.wait(1))
+            self.assertFalse(release_enrichment.is_set())
         finally:
+            release_enrichment.set()
             events.close()
             server.score_search_results = original_enrichment
+
+    def test_fast_collection_advances_without_waiting_for_slow_collection(self):
+        session = server.SearchSession("light", ["met", "nga"])
+        release_slow = threading.Event()
+        fast_finished = threading.Event()
+        fast_batch_sizes = []
+
+        def batch_search(
+            source_name, query, offset, batch_size, cancelled=None,
+            resolve_dimensions=True,
+        ):
+            if source_name == "met":
+                release_slow.wait(2)
+                return {
+                    "source": source_name, "results": [], "error": "",
+                    "offset": offset, "count": 0, "exhausted": True,
+                }
+            fast_batch_sizes.append(batch_size)
+            exhausted = len(fast_batch_sizes) == 4
+            if exhausted:
+                fast_finished.set()
+            return {
+                "source": source_name, "results": [], "error": "",
+                "offset": offset, "count": batch_size, "exhausted": exhausted,
+            }
+
+        events = []
+        consumer = threading.Thread(
+            target=lambda: events.extend(server.stream_search_round(session, batch_search)),
+        )
+        consumer.start()
+        try:
+            self.assertTrue(fast_finished.wait(1))
+            self.assertEqual(fast_batch_sizes, [1, 2, 4, server.BATCH_SIZE])
+            self.assertTrue(consumer.is_alive())
+        finally:
+            release_slow.set()
+            consumer.join(2)
+        self.assertFalse(consumer.is_alive())
 
     def test_identical_live_batches_are_coalesced_and_cached(self):
         original = sources.ADAPTERS["met"]

@@ -46,11 +46,6 @@ const galleryTiles = new Map();
 const panelItems = new Map();
 const searchControllers = new Set();
 const shownSourceAlerts = new Set();
-// Cold museum searches can legitimately include API retries and image-header
-// probes. Keep this below the reverse proxy's 130-second response timeout, but
-// do not abort while the backend is still within its normal request budget.
-const SOURCE_BATCH_TIMEOUT_MS = 120000;
-
 function selectedSources() {
   return [...sourceOptions.querySelectorAll('input:checked')].map(input => input.value);
 }
@@ -415,7 +410,6 @@ async function streamSearchRound(sequence, sessionId) {
   if (sequence !== currentSearchSequence) return null;
   const controller = new AbortController();
   searchControllers.add(controller);
-  const timer = setTimeout(() => controller.abort(), SOURCE_BATCH_TIMEOUT_MS + 5000);
   let latestSnapshot = null;
   try {
     const response = await fetch(
@@ -455,7 +449,6 @@ async function streamSearchRound(sequence, sessionId) {
     }
     return latestSnapshot;
   } finally {
-    clearTimeout(timer);
     searchControllers.delete(controller);
   }
 }
