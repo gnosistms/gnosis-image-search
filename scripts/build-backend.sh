@@ -39,7 +39,6 @@ PYINSTALLER_CONFIG_DIR="$PROJECT_DIR/build/pyinstaller-config" PYTHONPATH="$PYIN
   --hidden-import transformers.models.clip.modeling_clip \
   --hidden-import transformers.models.clip.processing_clip \
   --hidden-import transformers.models.clip.tokenization_clip \
-  --hidden-import transformers.models.clip.tokenization_clip_fast \
   --hidden-import requests \
   --exclude-module cv2 \
   --exclude-module datasets \
