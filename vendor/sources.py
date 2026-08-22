@@ -7,7 +7,10 @@ import base64, concurrent.futures, hashlib, io, json, os, threading, time
 import urllib.request, urllib.parse
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-CACHE = os.path.join(BASE, "api_cache")
+CACHE = os.path.join(
+    os.environ.get("SEARCH_DATA_DIR") or BASE,
+    "api_cache",
+)
 os.makedirs(CACHE, exist_ok=True)
 UA = {"User-Agent": "IllustrationTool/0.2 (personal research; sirhans@gmail.com)"}
 DELAY = 0.4
