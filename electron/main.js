@@ -170,7 +170,7 @@ async function createApplication() {
       ...process.env,
       SEARCH_DATA_DIR: dataDirectory,
       SEARCH_MODEL_KIND: activeModel.modelKind || 'siglip',
-      SEARCH_MODEL_NAME: activeModel.checkpoint || 'google/siglip2-large-patch16-256',
+      SEARCH_MODEL_NAME: activeModel.checkpoint || 'google/siglip2-base-patch16-256',
       SEARCH_MODEL_ALLOW_DOWNLOAD: '1',
       ...(activeModel.cacheDirectory ? { SEARCH_MODEL_CACHE_DIR: activeModel.cacheDirectory } : {}),
       ...(activeModel.axisModel ? { SEARCH_AXIS_MODEL: activeModel.axisModel } : {}),

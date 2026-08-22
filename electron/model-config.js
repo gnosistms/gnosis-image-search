@@ -2,13 +2,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const MODEL_CONFIG_SCHEMA_VERSION = 1;
-const DEFAULT_ACTIVE_PROFILE = 'pamela-siglip2-large-v1';
+const DEFAULT_ACTIVE_PROFILE = 'pamela-siglip2-base-v1';
 
 const MANAGED_MODEL_PROFILES = {
   [DEFAULT_ACTIVE_PROFILE]: {
     source: 'bundled',
     modelKind: 'siglip',
-    checkpoint: 'google/siglip2-large-patch16-256',
+    checkpoint: 'google/siglip2-base-patch16-256',
     cacheSubdirectory: DEFAULT_ACTIVE_PROFILE,
     axisModel: null,
     referenceEmbeddings: null
@@ -18,7 +18,9 @@ const MANAGED_MODEL_PROFILES = {
 // Future releases add replaced bundled profile ids here. On first launch after
 // the update, the active profile is switched before its app-owned cache is
 // removed. Never list a user-created profile here.
-const RETIRED_MANAGED_PROFILES = [];
+const RETIRED_MANAGED_PROFILES = [
+  { id: 'pamela-siglip2-large-v1', cacheSubdirectory: 'pamela-siglip2-large-v1' }
+];
 
 function isInsideDirectory(parent, candidate) {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate));

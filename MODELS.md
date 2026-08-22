@@ -13,12 +13,16 @@ The default checkpoint is cached below:
 
 `~/Library/Application Support/Gnosis Image Search/models/`
 
-Its managed profile uses `google/siglip2-large-patch16-256`. User-created
+Its managed profile uses `google/siglip2-base-patch16-256`. User-created
 profiles are preserved when the app refreshes its managed profiles. A future
 app release can add a replacement, make it active, and retire the old managed
 profile. On first launch, configuration is switched first and only the retired
 directory inside this app-owned `models` directory is deleted. External and
 shared cache paths are never recursively removed.
+
+The previous `pamela-siglip2-large-v1` profile is retired. Upgrading switches
+the managed default to `pamela-siglip2-base-v1` and removes only the old
+app-owned Large checkpoint cache after the new configuration is written.
 
 Profiles accept `modelKind: "siglip"` or `modelKind: "clip"`. A ranking profile
 must also supply a compatible learned axis (`axisModel`) and compatible

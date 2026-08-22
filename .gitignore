@@ -12,6 +12,8 @@ data/*
 !data/pamela/
 data/pamela/*
 !data/pamela/siglip2-large-patch16-256.npz
+!data/pamela/siglip2-base-patch16-256.npz
 !data/beauty-tournament/
 data/beauty-tournament/*
 !data/beauty-tournament/axis-ranking-model.npz
+!data/beauty-tournament/axis-ranking-model-siglip2-base-patch16-256.npz

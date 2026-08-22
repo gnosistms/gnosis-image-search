@@ -130,6 +130,38 @@ function imageRatio(item) {
   return Math.max(.62, Math.min(ratio, 2.8));
 }
 
+function imageFileType(item) {
+  const supported = new Map([
+    ['jpeg', 'JPG'], ['jpg', 'JPG'], ['png', 'PNG'], ['webp', 'WEBP'],
+    ['gif', 'GIF'], ['tif', 'TIFF'], ['tiff', 'TIFF'], ['jp2', 'JP2'],
+  ]);
+  const values = [
+    item.file_type, item.mime_type, item.mime, item.format,
+    item.full_resolution_url, item.image_url, item.thumb_url,
+  ].filter(Boolean);
+  for (const value of values) {
+    const text = String(value).toLowerCase();
+    for (const [token, label] of supported) {
+      if (text.includes(`image/${token}`)) return label;
+    }
+    try {
+      const url = new URL(value, document.baseURI);
+      const queryFormat = url.searchParams.get('fm')
+        || url.searchParams.get('format')
+        || url.searchParams.get('ext');
+      if (queryFormat && supported.has(queryFormat.toLowerCase())) {
+        return supported.get(queryFormat.toLowerCase());
+      }
+      const extension = url.pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase();
+      if (extension && supported.has(extension)) return supported.get(extension);
+    } catch (_error) {
+      const extension = text.match(/\.([a-z0-9]{2,5})(?:$|[?#])/i)?.[1]?.toLowerCase();
+      if (extension && supported.has(extension)) return supported.get(extension);
+    }
+  }
+  return 'IMAGE';
+}
+
 function imageCandidates(item, { detail = false } = {}) {
   const cachedDetail = detail
     && item.preview_click_action === 'open_full_image'
@@ -428,11 +460,7 @@ async function openDetails(id, previewImage) {
   detailSource.textContent = item.source_label;
   detailDescription.textContent = item.description || 'No additional description was supplied by this collection.';
   detailLicense.textContent = item.license;
-  detailSize.textContent = item.width && item.height
-    ? (item.preview_width && item.preview_height
-      ? `Original ${item.width} × ${item.height} px · Preview ${item.preview_width} × ${item.preview_height} px`
-      : `${item.width} × ${item.height} px`)
-    : '';
+  detailSize.textContent = '';
   detailLink.href = item.page_url || item.image_url;
   const previewAction = item.preview_click_action === 'visit_website'
     ? 'visit website'
@@ -440,10 +468,12 @@ async function openDetails(id, previewImage) {
   detailImageLink.href = item.preview_click_url || item.page_url || item.image_url;
   detailImageLink.title = previewAction;
   detailImageLink.setAttribute('aria-label', previewAction);
-  detailDimensionsOverlay.hidden = !(item.width && item.height);
-  detailDimensionsOverlay.textContent = item.width && item.height
-    ? `${item.width} × ${item.height}`
-    : '';
+  const imageType = imageFileType(item);
+  detailDimensionsOverlay.hidden = !(item.width && item.height) && imageType === 'IMAGE';
+  detailDimensionsOverlay.textContent = [
+    item.width && item.height ? `${item.width} × ${item.height}` : '',
+    imageType,
+  ].filter(Boolean).join(' · ');
   detailPanel.hidden = false;
   document.body.classList.add('panel-open');
   similarGrid.replaceChildren();

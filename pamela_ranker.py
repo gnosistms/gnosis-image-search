@@ -12,9 +12,11 @@ from semantic_embeddings import image_vectors
 
 HERE = Path(__file__).resolve().parent
 MODEL_PATH = Path(os.environ.get("SEARCH_AXIS_MODEL") or
-                  HERE / "data" / "beauty-tournament" / "axis-ranking-model.npz")
+                  HERE / "data" / "beauty-tournament" /
+                  "axis-ranking-model-siglip2-base-patch16-256.npz")
 PAMELA_EMBEDDINGS = Path(os.environ.get("SEARCH_PAMELA_EMBEDDINGS") or
-                         HERE / "data" / "pamela" / "siglip2-large-patch16-256.npz")
+                         HERE / "data" / "pamela" /
+                         "siglip2-base-patch16-256.npz")
 _VECTOR = None
 _BOOK_ARTIFACT_AXIS = None
 _CENTER = 0.0
@@ -23,8 +25,8 @@ _SCALE = 1.0
 # Calibrated against museum-search images. Scores below this point are usually
 # covers, bindings, spines, or mostly-text title pages; the short transition
 # preserves illustrated manuscript leaves and prints.
-BOOK_ARTIFACT_MIDPOINT = -0.035
-BOOK_ARTIFACT_TEMPERATURE = 0.012
+BOOK_ARTIFACT_MIDPOINT = -0.0466
+BOOK_ARTIFACT_TEMPERATURE = 0.0113
 
 
 def _load() -> bool:

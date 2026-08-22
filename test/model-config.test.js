@@ -6,6 +6,7 @@ const test = require('node:test');
 
 const {
   DEFAULT_ACTIVE_PROFILE,
+  RETIRED_MANAGED_PROFILES,
   isInsideDirectory,
   reconcileModelConfiguration
 } = require('../electron/model-config');
@@ -38,8 +39,34 @@ test('preserves custom profiles while refreshing managed profiles', () => {
   assert.equal(result.value.profiles['my-model'].checkpoint, 'my/clip');
   assert.equal(
     result.value.profiles[DEFAULT_ACTIVE_PROFILE].checkpoint,
-    'google/siglip2-large-patch16-256'
+    'google/siglip2-base-patch16-256'
   );
+});
+
+test('migrates the retired Large profile to Base and removes its app-owned cache', () => {
+  const userData = temporaryUserData();
+  const oldProfile = RETIRED_MANAGED_PROFILES[0];
+  const retiredCache = path.join(userData, 'models', oldProfile.cacheSubdirectory);
+  fs.mkdirSync(retiredCache, { recursive: true });
+  fs.writeFileSync(path.join(retiredCache, 'model.safetensors'), 'old');
+  fs.writeFileSync(path.join(userData, 'model-config.json'), JSON.stringify({
+    activeProfile: oldProfile.id,
+    profiles: {
+      [oldProfile.id]: {
+        source: 'bundled',
+        checkpoint: 'google/siglip2-large-patch16-256',
+        cacheDirectory: retiredCache
+      }
+    }
+  }));
+
+  const result = reconcileModelConfiguration(userData);
+  assert.equal(result.value.activeProfile, DEFAULT_ACTIVE_PROFILE);
+  assert.equal(
+    result.value.profiles[DEFAULT_ACTIVE_PROFILE].checkpoint,
+    'google/siglip2-base-patch16-256'
+  );
+  assert.equal(fs.existsSync(retiredCache), false);
 });
 
 test('switches away from a retired profile and deletes only its private cache', () => {

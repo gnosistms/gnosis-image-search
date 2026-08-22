@@ -53,8 +53,8 @@ PYINSTALLER_CONFIG_DIR="$PROJECT_DIR/build/pyinstaller-config" PYTHONPATH="$PYIN
   --exclude-module tkinter \
   --exclude-module torchvision \
   --add-data "$PROJECT_DIR/web:web" \
-  --add-data "$PROJECT_DIR/data/beauty-tournament/axis-ranking-model.npz:./data/beauty-tournament" \
-  --add-data "$PROJECT_DIR/data/pamela/siglip2-large-patch16-256.npz:./data/pamela" \
+  --add-data "$PROJECT_DIR/data/beauty-tournament/axis-ranking-model-siglip2-base-patch16-256.npz:./data/beauty-tournament" \
+  --add-data "$PROJECT_DIR/data/pamela/siglip2-base-patch16-256.npz:./data/pamela" \
   --add-data "$PROJECT_DIR/data/gnosis-media.json:./data" \
   --add-data "$PROJECT_DIR/data/nga-search.db:./data" \
   "$PROJECT_DIR/server.py"
