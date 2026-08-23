@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import urllib.error
 import urllib.parse
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -20,6 +21,44 @@ import gnosis_fuzzy
 import additional_sources
 import gnosis_catalog
 import semantic_embeddings
+
+
+class StaticFileTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.httpd = server.BoundedThreadingHTTPServer(
+            ("127.0.0.1", 0), server.SearchHandler, max_workers=2,
+        )
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.base_url = f"http://127.0.0.1:{cls.httpd.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.thread.join(2)
+
+    def test_hero_artwork_is_served_as_jpeg(self):
+        artwork = (
+            "annunciation-1390.jpg",
+            "annunciation-1660.jpg",
+            "madonna-and-child-with-musical-angels.jpg",
+            "adoration-of-the-magi.jpg",
+        )
+        for filename in artwork:
+            with self.subTest(filename=filename):
+                with urllib.request.urlopen(
+                    f"{self.base_url}/images/getty/{filename}"
+                ) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.headers.get_content_type(), "image/jpeg")
+                    self.assertTrue(response.read(3).startswith(b"\xff\xd8\xff"))
+
+    def test_unlisted_static_path_is_not_exposed(self):
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(f"{self.base_url}/images/getty/not-present.jpg")
+        self.assertEqual(raised.exception.code, 404)
 
 
 def result(source, title="Result", source_id="1", **extra):

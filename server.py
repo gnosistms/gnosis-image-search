@@ -27,6 +27,16 @@ from typing import Callable, Mapping
 
 HERE = Path(__file__).resolve().parent
 WEB_DIR = HERE / "web"
+STATIC_FILES = frozenset((
+    "app.js", "styles.css", "beauty.js", "beauty.css",
+    "full-size-image-url.js",
+    "google-helper.js", "google-ranking.js", "google-helper.css",
+    "gnosis-caduceus.svg",
+    "images/getty/annunciation-1390.jpg",
+    "images/getty/annunciation-1660.jpg",
+    "images/getty/madonna-and-child-with-musical-angels.jpg",
+    "images/getty/adoration-of-the-magi.jpg",
+))
 DATA_DIR = Path(os.environ.get("SEARCH_DATA_DIR") or HERE / "data").expanduser()
 PROTOTYPE_DIR = HERE / "vendor"
 if not (PROTOTYPE_DIR / "sources.py").exists():
@@ -1213,12 +1223,7 @@ class SearchHandler(BaseHTTPRequestHandler):
                 self.serve_static("google-helper.html")
             elif url.path == "/saint-peter-ranked":
                 self.serve_static("saint-peter-ranked.html")
-            elif url.path in (
-                "/app.js", "/styles.css", "/beauty.js", "/beauty.css",
-                "/full-size-image-url.js",
-                "/google-helper.js", "/google-ranking.js", "/google-helper.css",
-                "/gnosis-caduceus.svg",
-            ):
+            elif url.path.removeprefix("/") in STATIC_FILES:
                 self.serve_static(url.path[1:])
             elif url.path == "/favicon.ico":
                 self.serve_static("gnosis-caduceus.svg")
