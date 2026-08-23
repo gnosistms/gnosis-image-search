@@ -19,7 +19,9 @@ notarization. A Mac App Store provisioning profile is not required.
    storage into this repository. Unsigned macOS builds cannot use automatic
    updates.
 6. Bump `package.json`, commit, and push a matching tag such as `v0.2.0`.
-7. Inspect the draft GitHub Release, download and test its DMG, then publish it.
+7. Inspect the GitHub Release and test its DMG on a clean Mac. Confirm that a
+   remote collection search works without setting `SSL_CERT_FILE`; the app must
+   use the Certifi CA bundle included in the packaged backend.
 
 The app checks GitHub Releases at startup. It prompts before downloading an
 update, and installs only after the user accepts. Model weights and the local

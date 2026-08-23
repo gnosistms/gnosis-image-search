@@ -6,6 +6,7 @@ const http = require('node:http');
 const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
+const { backendEnvironment } = require('./backend-runtime');
 const { reconcileModelConfiguration } = require('./model-config');
 
 const APP_NAME = 'Gnosis Images';
@@ -848,17 +849,13 @@ async function createApplication() {
   const activeModel = modelConfig.profiles?.[modelConfig.activeProfile] || {};
   console.log(`Model configuration: ${configPath}`);
   backend = spawn(command.executable, command.args, {
-    env: {
-      ...process.env,
-      SEARCH_DATA_DIR: dataDirectory,
-      SEARCH_MODEL_KIND: activeModel.modelKind || 'siglip',
-      SEARCH_MODEL_NAME: activeModel.checkpoint || 'google/siglip2-base-patch16-256',
-      SEARCH_MODEL_ALLOW_DOWNLOAD: '1',
-      ...(activeModel.cacheDirectory ? { SEARCH_MODEL_CACHE_DIR: activeModel.cacheDirectory } : {}),
-      ...(activeModel.axisModel ? { SEARCH_AXIS_MODEL: activeModel.axisModel } : {}),
-      ...(activeModel.referenceEmbeddings ? { SEARCH_PAMELA_EMBEDDINGS: activeModel.referenceEmbeddings } : {}),
-      PYTHONUNBUFFERED: '1'
-    },
+    env: backendEnvironment({
+      baseEnvironment: process.env,
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      dataDirectory,
+      activeModel
+    }),
     stdio: ['ignore', 'pipe', 'pipe']
   });
   backend.stdout.on('data', (chunk) => console.log(`[search] ${chunk.toString().trimEnd()}`));

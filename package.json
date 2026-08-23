@@ -1,7 +1,7 @@
 {
   "name": "gnosis-image-search",
   "productName": "Gnosis Images",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Museum image search ranked by the PAMELA criterion model",
   "main": "electron/main.js",
   "author": "Hans",
@@ -15,6 +15,7 @@
     "package:mac": "npm run generate:dmg && npm run build:backend && electron-forge package --platform=darwin --arch=arm64",
     "make:mac": "npm run generate:dmg && npm run build:backend && electron-forge make --platform=darwin --arch=arm64",
     "publish:mac": "npm run generate:dmg && npm run build:backend && electron-forge publish --platform=darwin --arch=arm64",
+    "test:electron": "node --test test/*.test.js",
     "test:model-config": "node --test test/model-config.test.js"
   },
   "engines": {

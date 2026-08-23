@@ -65,6 +65,12 @@ PYINSTALLER_CONFIG_DIR="$PROJECT_DIR/build/pyinstaller-config" PYTHONPATH="$PYIN
   --add-data "$PROJECT_DIR/vendor/aic_hf_rows.json:." \
   "$PROJECT_DIR/server.py"
 
+CA_BUNDLE="$OUTPUT_DIR/gnosis-search-engine/_internal/certifi/cacert.pem"
+if [[ ! -s "$CA_BUNDLE" ]]; then
+  echo "Packaged backend is missing its Certifi CA bundle: $CA_BUNDLE" >&2
+  exit 1
+fi
+
 PYTHONPATH="$PYINSTALLER_DIR" "$PYTHON_BIN" \
   "$PROJECT_DIR/scripts/package-europeana-key.py" \
   "$OUTPUT_DIR/gnosis-search-engine/credentials"

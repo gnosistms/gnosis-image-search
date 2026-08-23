@@ -23,6 +23,7 @@ jobs:
       - name: Test application
         run: |
           .backend-venv/bin/python -m unittest discover -v
+          npm run test:electron
           node --check electron/main.js
           node --check web/app.js
           node --check docs/download.js
