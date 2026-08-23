@@ -22,7 +22,6 @@ function render(data) {
   const [left, right] = data.pair;
   for (const [side, item] of [['left', left], ['right', right]]) {
     ui[`${side}Image`].src = item.image_url;
-    ui[`${side}Image`].dataset.imageUrl = item.image_url;
     ui[`${side}Image`].alt = item.title;
     ui[`${side}Title`].textContent = item.title;
     ui[`${side}Source`].textContent = item.source;

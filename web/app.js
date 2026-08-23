@@ -20,6 +20,7 @@ const detailImageSpinner = document.querySelector('#detail-image-spinner');
 const detailDimensionsOverlay = document.querySelector('#detail-dimensions-overlay');
 const detailDownloadOverlay = document.querySelector('#detail-download-overlay');
 const downloadFullImage = document.querySelector('#download-full-image');
+const copyFullSizeImageUrl = document.querySelector('#copy-full-size-image-url');
 const detailTitle = document.querySelector('#detail-title');
 const detailSource = document.querySelector('#detail-source');
 const detailDescription = document.querySelector('#detail-description');
@@ -232,7 +233,6 @@ function imageCandidates(item, { detail = false } = {}) {
 function applyImageSources(image, item, { detail = false } = {}) {
   const candidates = imageCandidates(item, { detail });
   let index = 0;
-  image.dataset.imageUrl = item.image_url || item.download_url || item.thumb_url || '';
   image.loading = detail ? 'eager' : 'lazy';
   image.decoding = 'async';
   if (item.source === 'aic') image.referrerPolicy = 'no-referrer';
@@ -537,6 +537,11 @@ async function openDetails(id, previewImage) {
   downloadFullImage.disabled = false;
   downloadFullImage.hidden = !item.download_url;
   downloadFullImage.dataset.itemId = item.download_url ? item.id : '';
+  const copyUrlState = GnosisFullSizeImageUrl.controlState(item);
+  copyFullSizeImageUrl.disabled = copyUrlState.disabled;
+  copyFullSizeImageUrl.dataset.itemId = copyUrlState.disabled ? '' : item.id;
+  copyFullSizeImageUrl.dataset.tooltip = copyUrlState.tooltip;
+  copyFullSizeImageUrl.setAttribute('aria-label', copyUrlState.tooltip);
   const imageType = imageFileType(item);
   detailDimensionsOverlay.hidden = !(item.width && item.height) && imageType === 'IMAGE';
   detailDimensionsOverlay.textContent = [
@@ -596,6 +601,21 @@ downloadFullImage.addEventListener('click', async () => {
   link.download = filename;
   link.rel = 'noopener noreferrer';
   link.click();
+});
+
+copyFullSizeImageUrl.addEventListener('click', async () => {
+  const item = findItem(copyFullSizeImageUrl.dataset.itemId);
+  const url = GnosisFullSizeImageUrl.fullSizeImageUrl(item);
+  if (!url) return;
+  try {
+    if (window.gnosisDesktop?.copyFullSizeImageUrl) {
+      await window.gnosisDesktop.copyFullSizeImageUrl({ url });
+    } else {
+      await navigator.clipboard.writeText(url);
+    }
+  } catch (_error) {
+    window.alert('The full-sized image URL could not be copied.');
+  }
 });
 
 async function loadSimilar(id) {

@@ -115,7 +115,6 @@ function renderResults() {
     const image = card.querySelector('img');
     link.href = item.page_url || item.image_url;
     image.src = item.thumb_url || item.image_url;
-    image.dataset.imageUrl = item.image_url || item.thumb_url || '';
     image.alt = item.title || 'Museum image';
     image.addEventListener('error', () => {
       if (image.src !== item.image_url) image.src = item.image_url;

@@ -98,6 +98,15 @@
           <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"/>
         </svg>
       </button>
+      <button id="copy-full-size-image-url" class="copy-full-size-image-url" type="button"
+              data-tooltip="copy image url" aria-label="Copy image URL" disabled>
+        <!-- Lucide link-2 icon, https://lucide.dev/icons/link-2 (MIT). -->
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 17H7A5 5 0 0 1 7 7h2"/>
+          <path d="M15 7h2a5 5 0 1 1 0 10h-2"/>
+          <path d="M8 12h8"/>
+        </svg>
+      </button>
     </div>
     <div class="detail-info">
       <div class="detail-meta">
@@ -136,6 +145,7 @@
     </button>
   </template>
 
+  <script src="/full-size-image-url.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

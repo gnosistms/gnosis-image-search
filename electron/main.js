@@ -9,7 +9,6 @@ const path = require('node:path');
 const { backendEnvironment, packagedBackendExecutable } = require('./backend-runtime');
 const { reconcileModelConfiguration, seedBundledModel } = require('./model-config');
 const { compatibleUpdateAsset } = require('./update-assets');
-const { imageContextMenuTemplate, normalizedImageUrl } = require('./image-context-menu');
 
 const APP_NAME = 'Gnosis Images';
 const APP_DATA_NAME = 'Gnosis Image Search';
@@ -430,15 +429,6 @@ async function collectGoogleStage(_event, options = {}) {
 
 ipcMain.handle('google-images:search-stage', collectGoogleStage);
 
-function contextMenuImageFilename(url) {
-  try {
-    const filename = path.basename(new URL(url).pathname);
-    return filename || 'image';
-  } catch (_error) {
-    return 'image';
-  }
-}
-
 function downloadImage(sender, url, filename, title) {
   const downloadSession = sender.session;
   return new Promise((resolve, reject) => {
@@ -463,27 +453,13 @@ function downloadImage(sender, url, filename, title) {
   });
 }
 
-ipcMain.on('image:show-context-menu', (event, options = {}) => {
-  const imageUrl = normalizedImageUrl(options.imageUrl);
-  const x = Number.isFinite(options.x) ? Math.max(0, Math.round(options.x)) : 0;
-  const y = Number.isFinite(options.y) ? Math.max(0, Math.round(options.y)) : 0;
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!imageUrl || !window || window.isDestroyed()) return;
-  const template = imageContextMenuTemplate({
-    imageUrl,
-    x,
-    y,
-    webContents: event.sender,
-    clipboard,
-    shell,
-    saveImage: url => downloadImage(
-      event.sender,
-      url,
-      contextMenuImageFilename(url),
-      'Save image',
-    ).catch(error => console.error(`Image download failed: ${error.stack || error}`)),
-  });
-  Menu.buildFromTemplate(template).popup({ window });
+ipcMain.handle('image:copy-full-size-url', (_event, options = {}) => {
+  const parsed = new URL(String(options.url || ''));
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('The full-sized image URL is invalid.');
+  }
+  clipboard.writeText(parsed.href);
+  return { url: parsed.href };
 });
 
 ipcMain.handle('image:download-full-size', (event, options = {}) => {

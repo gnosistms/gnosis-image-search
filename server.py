@@ -1215,6 +1215,7 @@ class SearchHandler(BaseHTTPRequestHandler):
                 self.serve_static("saint-peter-ranked.html")
             elif url.path in (
                 "/app.js", "/styles.css", "/beauty.js", "/beauty.css",
+                "/full-size-image-url.js",
                 "/google-helper.js", "/google-ranking.js", "/google-helper.css",
                 "/gnosis-caduceus.svg",
             ):
