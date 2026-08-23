@@ -17,6 +17,10 @@ On macOS the app creates its writable data under:
 
 `~/Library/Application Support/Gnosis Image Search/`
 
+On Windows it uses:
+
+`%APPDATA%\Gnosis Image Search\`
+
 The active model profile is defined by `model-config.json` in that directory.
 See [MODELS.md](MODELS.md) before changing checkpoints: the learned PAMELA axis
 and its reference embeddings must use the same vector space.
@@ -59,7 +63,9 @@ Windows, or Linux.
 
 The application checks the latest public GitHub Release at startup. If a newer
 version exists, it asks for permission before downloading and installing it.
-macOS updates require a Developer ID-signed and notarized build. See
+macOS updates require a Developer ID-signed and notarized build. Windows x64
+updates use the release's Squirrel `Setup.exe`; those installers remain
+unsigned until a Windows code-signing certificate is configured. See
 [RELEASING.md](RELEASING.md) for the provisioning and release procedure.
 
 ## Tests

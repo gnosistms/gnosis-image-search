@@ -1,7 +1,8 @@
-# macOS release setup
+# Release setup
 
-Public direct-download builds require Apple Developer ID signing and
-notarization. A Mac App Store provisioning profile is not required.
+Public macOS direct-download builds require Apple Developer ID signing and
+notarization. A Mac App Store provisioning profile is not required. Windows
+x64 installers are built in parallel and are currently unsigned.
 
 1. Enroll the release owner in the Apple Developer Program.
 2. In Xcode, open **Settings → Accounts**, add the Apple ID, select the team,
@@ -22,6 +23,9 @@ notarization. A Mac App Store provisioning profile is not required.
 7. Inspect the GitHub Release and test its DMG on a clean Mac. Confirm that a
    remote collection search works without setting `SSL_CERT_FILE`; the app must
    use the Certifi CA bundle included in the packaged backend.
+8. Test the Windows x64 `Setup.exe` on a clean Windows system. Windows builds
+   are currently unsigned and may show a Microsoft Defender SmartScreen
+   warning until a Windows code-signing certificate is configured.
 
 The app checks GitHub Releases at startup. It prompts before downloading an
 update, and installs only after the user accepts. Model weights and the local

@@ -12,6 +12,15 @@ function bundledCertificatePath(resourcesPath) {
   return path.join(resourcesPath, BUNDLED_CA_RELATIVE_PATH);
 }
 
+function packagedBackendExecutable(resourcesPath, platform = process.platform) {
+  return path.join(
+    resourcesPath,
+    'backend',
+    'gnosis-search-engine',
+    platform === 'win32' ? 'gnosis-search-engine.exe' : 'gnosis-search-engine'
+  );
+}
+
 function backendEnvironment(options) {
   const {
     baseEnvironment = process.env,
@@ -45,5 +54,6 @@ function backendEnvironment(options) {
 module.exports = {
   BUNDLED_CA_RELATIVE_PATH,
   backendEnvironment,
-  bundledCertificatePath
+  bundledCertificatePath,
+  packagedBackendExecutable
 };

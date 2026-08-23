@@ -4,7 +4,8 @@ const test = require('node:test');
 
 const {
   backendEnvironment,
-  bundledCertificatePath
+  bundledCertificatePath,
+  packagedBackendExecutable
 } = require('../electron/backend-runtime');
 
 test('packaged backend uses the CA bundle shipped with Certifi', () => {
@@ -57,4 +58,16 @@ test('development backend leaves existing certificate settings unchanged', () =>
   assert.equal(environment.SEARCH_MODEL_KIND, 'clip');
   assert.equal(environment.SEARCH_MODEL_NAME, 'example/model');
   assert.equal(environment.SEARCH_MODEL_CACHE_DIR, '/tmp/model-cache');
+});
+
+test('packaged backend selects the native executable name', () => {
+  const resourcesPath = path.join(path.sep, 'app', 'resources');
+  assert.equal(
+    packagedBackendExecutable(resourcesPath, 'darwin'),
+    path.join(resourcesPath, 'backend', 'gnosis-search-engine', 'gnosis-search-engine')
+  );
+  assert.equal(
+    packagedBackendExecutable(resourcesPath, 'win32'),
+    path.join(resourcesPath, 'backend', 'gnosis-search-engine', 'gnosis-search-engine.exe')
+  );
 });

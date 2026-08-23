@@ -116,6 +116,16 @@ module.exports = {
     {
       name: '@electron-forge/maker-zip',
       platforms: ['darwin']
+    },
+    {
+      name: '@electron-forge/maker-squirrel',
+      config: {
+        name: 'gnosis_images',
+        authors: 'Hans',
+        description: 'Museum image search ranked by the PAMELA criterion model',
+        setupExe: `Gnosis-Images-${require('./package.json').version}-Setup.exe`,
+        setupIcon: path.resolve('assets/icon.ico')
+      }
     }
   ],
   publishers: [

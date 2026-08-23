@@ -1,7 +1,7 @@
 {
   "name": "gnosis-image-search",
   "productName": "Gnosis Images",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Museum image search ranked by the PAMELA criterion model",
   "main": "electron/main.js",
   "author": "Hans",
@@ -11,9 +11,11 @@
   "scripts": {
     "start": "electron-forge start",
     "build:backend": "bash scripts/build-backend.sh",
+    "build:backend:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
     "generate:dmg": "${BACKEND_PYTHON:-python3} scripts/generate-dmg-background.py",
     "package:mac": "npm run generate:dmg && npm run build:backend && electron-forge package --platform=darwin --arch=arm64",
     "make:mac": "npm run generate:dmg && npm run build:backend && electron-forge make --platform=darwin --arch=arm64",
+    "make:win": "npm run build:backend:win && electron-forge make --platform=win32 --arch=x64",
     "publish:mac": "npm run generate:dmg && npm run build:backend && electron-forge publish --platform=darwin --arch=arm64",
     "test:electron": "node --test test/*.test.js",
     "test:model-config": "node --test test/model-config.test.js"
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@electron-forge/cli": "^7.8.3",
     "@electron-forge/maker-dmg": "^7.8.3",
+    "@electron-forge/maker-squirrel": "^7.11.2",
     "@electron-forge/maker-zip": "^7.8.3",
     "@electron-forge/publisher-github": "^7.8.3",
     "electron": "^43.3.0",

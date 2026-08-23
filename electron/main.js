@@ -6,7 +6,7 @@ const http = require('node:http');
 const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
-const { backendEnvironment } = require('./backend-runtime');
+const { backendEnvironment, packagedBackendExecutable } = require('./backend-runtime');
 const { reconcileModelConfiguration } = require('./model-config');
 
 const APP_NAME = 'Gnosis Images';
@@ -792,7 +792,7 @@ function backendCommand(port) {
   const args = ['--host', '127.0.0.1', '--port', String(port)];
   if (app.isPackaged) {
     return {
-      executable: path.join(process.resourcesPath, 'backend', 'gnosis-search-engine', 'gnosis-search-engine'),
+      executable: packagedBackendExecutable(process.resourcesPath),
       args
     };
   }
@@ -896,7 +896,9 @@ async function createApplication() {
     true,
   );
   if (!googleBridgeReady) throw new Error('Google Images browser bridge did not load.');
-  if (process.platform === 'darwin') setTimeout(checkForUpdates, 2500).unref();
+  if (['darwin', 'win32'].includes(process.platform)) {
+    setTimeout(checkForUpdates, 2500).unref();
+  }
 }
 
 const hasLock = app.requestSingleInstanceLock();
