@@ -24,6 +24,10 @@ test('full distribution includes the staged model in a separate output tree', ()
   assert.deepEqual(config.packagerConfig.extraResource, ['build/backend', 'build/bundled-models']);
   const dmg = config.makers.find(maker => maker.name === '@electron-forge/maker-dmg');
   assert.match(dmg.config.name, /Gnosis-Images-Full-Installer-.*-arm64/);
+  const squirrel = config.makers.find(maker => maker.name === '@electron-forge/maker-squirrel');
+  const wix = config.makers.find(maker => maker.name === '@electron-forge/maker-wix');
+  assert.deepEqual(squirrel.platforms, []);
+  assert.deepEqual(wix.platforms, ['win32']);
 });
 
 test('update distribution cannot contain the staged model', () => {
@@ -32,5 +36,8 @@ test('update distribution cannot contain the staged model', () => {
   assert.deepEqual(config.packagerConfig.extraResource, ['build/backend']);
   assert.equal(config.packagerConfig.extraResource.includes('build/bundled-models'), false);
   const squirrel = config.makers.find(maker => maker.name === '@electron-forge/maker-squirrel');
+  const wix = config.makers.find(maker => maker.name === '@electron-forge/maker-wix');
   assert.match(squirrel.config.setupExe, /Gnosis-Images-Update-.*-x64\.exe/);
+  assert.deepEqual(squirrel.platforms, ['win32']);
+  assert.deepEqual(wix.platforms, []);
 });

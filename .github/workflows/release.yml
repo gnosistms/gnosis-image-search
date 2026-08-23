@@ -81,6 +81,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install WiX Toolset
+        run: choco install wixtoolset --version=3.14.0 --no-progress -y
       - run: python -m venv .backend-venv
       - run: .\.backend-venv\Scripts\python.exe -m pip install -r requirements-backend.txt pyinstaller==6.22.2
       - run: npm ci
@@ -105,6 +107,12 @@ jobs:
           $env:GNOSIS_TARGET_ARCH = 'x64'
           $env:GNOSIS_DISTRIBUTION = 'full'
           npx electron-forge make --platform=win32 --arch=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $msi = Get-ChildItem 'out\full\make\wix\x64\*.msi' | Select-Object -First 1
+          if (-not $msi) { throw 'WiX did not produce the full Windows MSI.' }
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $name = "Gnosis-Images-Full-Installer-$version-x64.msi"
+          Move-Item -Force $msi.FullName (Join-Path $msi.DirectoryName $name)
       - name: Package Windows update
         run: |
           $env:GNOSIS_TARGET_ARCH = 'x64'
@@ -143,3 +151,4 @@ jobs:
           files: |
             release-assets/full/make/**/*.dmg
             release-assets/full/make/**/*.exe
+            release-assets/full/make/**/*.msi
