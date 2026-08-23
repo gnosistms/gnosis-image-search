@@ -96,10 +96,20 @@ jobs:
         env:
           BACKEND_PYTHON: ${{ github.workspace }}\.backend-venv\Scripts\python.exe
           EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
-      - name: Package full and update Windows installers
-        run: npm run make:win:distributions
+      - name: Stage bundled model
+        run: '& $env:BACKEND_PYTHON scripts/prepare-bundled-model.py'
         env:
           BACKEND_PYTHON: ${{ github.workspace }}\.backend-venv\Scripts\python.exe
+      - name: Package full Windows installer
+        run: |
+          $env:GNOSIS_TARGET_ARCH = 'x64'
+          $env:GNOSIS_DISTRIBUTION = 'full'
+          npx electron-forge make --platform=win32 --arch=x64
+      - name: Package Windows update
+        run: |
+          $env:GNOSIS_TARGET_ARCH = 'x64'
+          $env:GNOSIS_DISTRIBUTION = 'update'
+          npx electron-forge make --platform=win32 --arch=x64
       - uses: actions/upload-artifact@v4
         with:
           name: gnosis-image-search-windows-x64
