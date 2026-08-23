@@ -18,6 +18,8 @@ const detailImageLink = document.querySelector('#detail-image-link');
 const detailImage = document.querySelector('#detail-image');
 const detailImageSpinner = document.querySelector('#detail-image-spinner');
 const detailDimensionsOverlay = document.querySelector('#detail-dimensions-overlay');
+const detailDownloadOverlay = document.querySelector('#detail-download-overlay');
+const downloadFullImage = document.querySelector('#download-full-image');
 const detailTitle = document.querySelector('#detail-title');
 const detailSource = document.querySelector('#detail-source');
 const detailDescription = document.querySelector('#detail-description');
@@ -196,7 +198,7 @@ function imageFileType(item) {
 
 function imageCandidates(item, { detail = false } = {}) {
   const cachedDetail = detail
-    && item.preview_click_action === 'open_full_image'
+    && item.download_url
     && currentSession
     ? `/api/image/detail?session=${encodeURIComponent(currentSession)}&id=${encodeURIComponent(item.id)}`
     : '';
@@ -528,12 +530,12 @@ async function openDetails(id, previewImage) {
   detailDescription.textContent = item.description || 'No additional description was supplied by this collection.';
   detailLicense.textContent = item.license;
   detailSize.textContent = '';
-  const previewAction = item.preview_click_action === 'visit_website'
-    ? 'visit website'
-    : 'open full sized image';
   detailImageLink.href = item.preview_click_url || item.page_url || item.image_url;
-  detailImageLink.title = previewAction;
-  detailImageLink.setAttribute('aria-label', previewAction);
+  detailImageLink.setAttribute('aria-label', 'Open image website');
+  detailDownloadOverlay.hidden = true;
+  downloadFullImage.disabled = false;
+  downloadFullImage.hidden = !item.download_url;
+  downloadFullImage.dataset.itemId = item.download_url ? item.id : '';
   const imageType = imageFileType(item);
   detailDimensionsOverlay.hidden = !(item.width && item.height) && imageType === 'IMAGE';
   detailDimensionsOverlay.textContent = [
@@ -548,6 +550,52 @@ async function openDetails(id, previewImage) {
   similarStatus.textContent = 'Comparing images in this search…';
   await loadSimilar(id);
 }
+
+function suggestedImageFilename(item) {
+  let extension = '';
+  try {
+    extension = new URL(item.download_url).pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1] || '';
+  } catch (_error) {}
+  if (!extension) {
+    const type = imageFileType(item).toLowerCase();
+    extension = type === 'image' ? 'jpg' : type === 'tiff' ? 'tif' : type;
+  }
+  const stem = (item.title || 'image')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120) || 'image';
+  return `${stem}.${extension}`;
+}
+
+downloadFullImage.addEventListener('click', async () => {
+  const item = findItem(downloadFullImage.dataset.itemId);
+  if (!item?.download_url) return;
+  const filename = suggestedImageFilename(item);
+  if (window.gnosisDesktop?.downloadFullSize) {
+    detailDownloadOverlay.hidden = false;
+    downloadFullImage.disabled = true;
+    try {
+      const url = item.source === 'harvard' && currentSession
+        ? new URL(`/api/image/detail?session=${encodeURIComponent(currentSession)}&id=${encodeURIComponent(item.id)}`, location.href).href
+        : item.download_url;
+      await window.gnosisDesktop.downloadFullSize({ url, filename });
+    } catch (error) {
+      window.alert(error.message || 'The full-sized image could not be downloaded.');
+    } finally {
+      if (selectedItemId === item.id) {
+        detailDownloadOverlay.hidden = true;
+        downloadFullImage.disabled = false;
+      }
+    }
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = item.download_url;
+  link.download = filename;
+  link.rel = 'noopener noreferrer';
+  link.click();
+});
 
 async function loadSimilar(id) {
   try {

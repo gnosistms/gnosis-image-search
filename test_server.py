@@ -395,6 +395,17 @@ class BatchTests(unittest.TestCase):
             self.assertIn(name, server.DEFAULT_SELECTED)
 
         self.assertEqual(len(server.SOURCE_LABELS), 18)
+        self.assertEqual(server.GOOGLE_IMAGE_SOURCES, frozenset((
+            "universal_comasonry", "cleveland", "met", "aic", "nga",
+            "harvard", "mia", "loc", "wellcome", "vam", "commons",
+        )))
+        self.assertTrue(server.GOOGLE_IMAGE_SOURCES <= set(server.SOURCE_LABELS))
+        self.assertTrue(server.GOOGLE_IMAGE_SOURCES <= set(server.SOURCE_DOMAINS))
+        for name in (
+            "gnosis", "rijksmuseum", "getty", "yale", "paris_musees",
+            "smk", "europeana",
+        ):
+            self.assertNotIn(name, server.GOOGLE_IMAGE_SOURCES)
         self.assertNotIn("getty_alchemy", server.SOURCE_LABELS)
         self.assertNotIn("getty_alchemy", sources.ADAPTERS)
         self.assertNotIn("getty_alchemy", server.DEFAULT_SELECTED)
@@ -1293,20 +1304,23 @@ class BatchTests(unittest.TestCase):
         self.assertEqual((item["preview_width"], item["preview_height"]), (843, 1095))
         self.assertIn("120172", item["full_resolution_url"])
         self.assertEqual(item["preview_click_action"], "visit_website")
-        self.assertEqual(item["preview_click_url"], item["full_resolution_url"])
+        self.assertEqual(item["preview_click_url"], item["page_url"])
+        self.assertEqual(item["download_url"], "")
 
-    def test_normalization_opens_direct_full_image_when_available(self):
+    def test_normalization_visits_page_and_exposes_direct_download_when_available(self):
         item = server.normalize_result(result("met", source_id="17"))
-        self.assertEqual(item["preview_click_action"], "open_full_image")
-        self.assertEqual(item["preview_click_url"], item["image_url"])
+        self.assertEqual(item["preview_click_action"], "visit_website")
+        self.assertEqual(item["preview_click_url"], item["page_url"])
+        self.assertEqual(item["download_url"], item["image_url"])
 
-    def test_normalization_opens_aic_commons_full_image_directly(self):
+    def test_normalization_visits_aic_page_and_exposes_commons_download(self):
         item = server.normalize_result(result(
             "aic", source_id="42", image_delivery="commons",
             full_resolution_url="https://www.artic.edu/artworks/42",
         ))
-        self.assertEqual(item["preview_click_action"], "open_full_image")
-        self.assertEqual(item["preview_click_url"], item["image_url"])
+        self.assertEqual(item["preview_click_action"], "visit_website")
+        self.assertEqual(item["preview_click_url"], item["page_url"])
+        self.assertEqual(item["download_url"], item["image_url"])
 
     def test_source_batch_returns_only_the_requested_slice(self):
         items = [result("met", f"Item {index}", str(index)) for index in range(30)]

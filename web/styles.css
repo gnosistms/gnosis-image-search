@@ -55,7 +55,7 @@ body.search-active #content { padding: 4px; }
 body.panel-open #content { margin-right: var(--panel-width); }
 .empty-state { min-height: 100vh; display: grid; grid-template-columns: 48% 52%; overflow: hidden; color: var(--ink); background: #f3ede4; }
 body.desktop-app .empty-state { -webkit-app-region: drag; }
-body.desktop-app .empty-state button, body.desktop-app .empty-state input { -webkit-app-region: no-drag; }
+body.desktop-app .empty-state button, body.desktop-app .empty-state input, body.desktop-app .empty-state a { -webkit-app-region: no-drag; }
 .hero-copy { position: relative; z-index: 2; display: flex; flex-direction: column; justify-content: center; padding: 88px 8% 62px 10%; }
 .hero-brand { display: flex; align-items: center; color: var(--accent); font-size: 12px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase; }
 .hero-brand img { display: block; width: 40px; height: 30px; margin-right: 10px; object-fit: contain; }
@@ -68,6 +68,9 @@ body.desktop-app .empty-state button, body.desktop-app .empty-state input { -web
 .hero-search-form button.is-clear { font-size: 23px; font-weight: 400; line-height: 1; }
 .hero-filter-button { width: 100%; margin-top: 17px; padding: 11px 20px; background: transparent; border: 1px solid #dcd3ca; border-radius: 11px; cursor: pointer; font-size: 13px; font-weight: 650; text-align: left; }
 .hero-filter-button:hover, .hero-filter-button[aria-expanded="true"] { background: rgba(255,255,255,.42); }
+.google-helper-link { align-self: flex-start; margin-top: 17px; color: var(--accent); font-size: 12px; font-weight: 700; text-decoration: none; }
+.google-helper-link:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 3px; }
+.google-helper-link span { margin-left: 3px; }
 .hero-artwall { position: relative; min-height: 100vh; overflow: hidden; background: #4c2835; }
 .hero-art { position: absolute; margin: 0; overflow: hidden; background: #291c20; border: 8px solid #f7f0e6; box-shadow: 0 18px 34px rgba(25,8,13,.3); }
 .hero-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -110,13 +113,26 @@ body.desktop-app .empty-state button, body.desktop-app .empty-state input { -web
 .icon-button:hover { background: var(--soft); }
 .large-image-wrap { position: relative; display: flex; width: 100%; min-height: 260px; max-height: 54vh; align-items: center; justify-content: center; overflow: hidden; background: #ede9e3; }
 .large-image-wrap a { position: relative; display: flex; width: min(100%, calc(54vh * var(--detail-ratio, 1.38))); max-height: 54vh; aspect-ratio: var(--detail-ratio, 1.38); align-items: center; justify-content: center; cursor: pointer; }
+.visit-tooltip, .download-full-image::after { position: absolute; z-index: 5; bottom: 12px; left: 50%; padding: 5px 8px; color: #fff; background: rgba(29,27,25,.9); border-radius: 4px; opacity: 0; font-size: 11px; font-weight: 600; line-height: 14px; pointer-events: none; transform: translateX(-50%); transition: none; white-space: nowrap; }
+.visit-tooltip { display: flex; align-items: center; gap: 5px; }
+.visit-tooltip svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.large-image-wrap a:hover .visit-tooltip, .large-image-wrap a:focus-visible .visit-tooltip, .download-full-image:hover::after, .download-full-image:focus-visible::after { opacity: 1; }
 .large-image-wrap img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .detail-image-spinner { position: absolute; z-index: 1; top: 50%; left: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; background: rgba(32,33,36,.56); border-radius: 50%; box-shadow: 0 1px 5px #0004; pointer-events: none; }
 .detail-image-spinner::after { content: ""; position: absolute; inset: 8px; border: 3px solid rgba(255,255,255,.42); border-top-color: #fff; border-radius: 50%; animation: detail-image-spin .75s linear infinite; }
 .detail-image-spinner[hidden] { display: none; }
 @keyframes detail-image-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .detail-image-spinner::after { animation-duration: 1.5s; } }
+.detail-download-overlay { position: absolute; z-index: 3; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; color: #fff; background: rgba(29,27,25,.72); font-size: 13px; font-weight: 650; letter-spacing: .01em; pointer-events: none; backdrop-filter: blur(3px); }
+.detail-download-overlay[hidden] { display: none; }
+.download-spinner { width: 22px; height: 22px; border: 3px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: detail-image-spin .75s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .download-spinner { animation-duration: 1.5s; } }
 .dimensions-overlay { position: absolute; right: 6px; bottom: 6px; padding: 4px 7px; color: #fff; background: rgba(29,27,25,.76); border-radius: 3px; font-size: 10px; font-weight: 650; line-height: 14px; letter-spacing: .02em; pointer-events: none; backdrop-filter: blur(5px); }
+.download-full-image { position: absolute; z-index: 2; left: 6px; bottom: 6px; display: grid; width: 26px; height: 22px; padding: 3px 5px; place-items: center; color: #fff; background: rgba(29,27,25,.76); border: 0; border-radius: 3px; cursor: pointer; backdrop-filter: blur(5px); }
+.download-full-image:hover { background: rgba(29,27,25,.92); }
+.download-full-image:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.download-full-image::after { content: attr(data-tooltip); bottom: calc(100% + 6px); left: 0; transform: none; }
+.download-full-image svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .detail-info { padding: 18px 19px 16px; border-bottom: 1px solid var(--line); }
 .detail-source { min-width: 0; margin: 0; overflow: hidden; color: var(--accent); font-size: 11px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .detail-info h1 { margin: 7px 0 5px; color: #302823; font: 500 25px/1.12 Georgia, "Times New Roman", serif; letter-spacing: -.015em; }

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; connect-src 'self'; style-src 'self'; script-src 'self'">
+  <title>Google Museum Search · Gnosis Images</title>
+  <link rel="icon" href="/gnosis-caduceus.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/google-helper.css">
+</head>
+<body>
+  <header class="helper-header">
+    <a class="brand" href="/"><img src="/gnosis-caduceus.svg" alt=""><span>Gnosis Images</span></a>
+    <span class="header-label">Google museum search</span>
+  </header>
+
+  <main>
+    <section class="intro">
+      <p class="eyebrow">Google-powered collection search</p>
+      <h1>Search broadly.<br>Rank for resolution.</h1>
+      <p class="lede">Collect up to 200 Google results at each of four image-size thresholds, preserve Google’s broadest ranking, then reward actual pixel area using the same logarithmic size rule as Gnosis Images.</p>
+    </section>
+
+    <form id="search-form" class="workspace">
+      <section class="card query-card">
+        <label for="search-query">What are you looking for?</label>
+        <div class="query-row">
+          <input id="search-query" type="search" maxlength="240" autocomplete="off" placeholder="e.g. angel gabriel" autofocus>
+          <button id="search-button" class="primary-button" type="submit">Search Google Images</button>
+        </div>
+      </section>
+
+      <section class="card source-card">
+        <div class="section-heading">
+          <div><span class="step">01</span><h2>Choose collections</h2></div>
+          <div class="text-actions"><button id="select-all" type="button">All</button><button id="select-none" type="button">None</button></div>
+        </div>
+        <div id="source-options" class="source-options" aria-live="polite"></div>
+      </section>
+
+      <section class="card process-card">
+        <div class="section-heading">
+          <div><span class="step">02</span><h2>Four-pass collection</h2></div>
+          <span id="process-summary" class="selection-summary">Ready</span>
+        </div>
+        <div id="stage-progress" class="stage-progress">
+          <div class="stage" data-stage="4"><span>4 MP</span><small>Broad ranking</small><strong>Waiting</strong></div>
+          <div class="stage" data-stage="9"><span>9 MP</span><small>Large additions</small><strong>Waiting</strong></div>
+          <div class="stage" data-stage="16"><span>16 MP</span><small>Larger additions</small><strong>Waiting</strong></div>
+          <div class="stage" data-stage="25"><span>25 MP</span><small>Largest additions</small><strong>Waiting</strong></div>
+        </div>
+        <p class="hint">The 4 MP pass establishes the sizeless order. New images found later are appended in stage order. Cached stage metadata is reused for 24 hours.</p>
+      </section>
+    </form>
+
+    <section id="results-section" class="results-section" hidden>
+      <div class="results-header">
+        <div><p id="result-count" class="eyebrow"></p><h2 id="result-title">Ranked results</h2></div>
+        <div class="sort-toggle" role="group" aria-label="Result ordering">
+          <button type="button" data-sort="final" class="selected">Size-adjusted</button>
+          <button type="button" data-sort="sizeless">Sizeless</button>
+        </div>
+      </div>
+      <div id="formula-note" class="formula-note"></div>
+      <div id="result-notice" class="result-notice" hidden></div>
+      <div id="gallery" class="gallery" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <template id="result-template">
+    <article class="result-card">
+      <a class="image-link" target="_blank" rel="noopener noreferrer">
+        <img loading="lazy" alt=""><span class="rank-badge"></span><span class="dimensions"></span>
+      </a>
+      <div class="result-copy"><p class="result-source"></p><h3></h3><p class="result-score"></p></div>
+    </article>
+  </template>
+
+  <script src="/google-ranking.js" defer></script>
+  <script src="/google-helper.js" defer></script>
+</body>
+</html>

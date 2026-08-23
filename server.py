@@ -41,6 +41,10 @@ from additional_sources import (  # noqa: E402
     universal_comasonry, yale,
 )
 from gnosis_catalog import GnosisCatalog  # noqa: E402
+from google_image_search import (  # noqa: E402
+    GoogleImageSearchError, GoogleVerificationRequired, SOURCE_DOMAINS,
+    search_google_stage,
+)
 from image_dimensions import resolve_result_dimensions  # noqa: E402
 from ranker import rank_result_groups, rank_results  # noqa: E402
 from semantic_embeddings import add_semantic_scores, image_similarity  # noqa: E402
@@ -70,6 +74,13 @@ SOURCE_LABELS = OrderedDict([
     ("europeana", "Europeana"),
 ])
 DEFAULT_SELECTED = tuple(SOURCE_LABELS)
+# Google Images indexes these collection sites well enough to return actual
+# object pages.  Keep this separate from DEFAULT_SELECTED: the normal search
+# should continue using every collection's official API/catalog adapter.
+GOOGLE_IMAGE_SOURCES = frozenset((
+    "universal_comasonry", "cleveland", "met", "aic", "nga", "harvard",
+    "mia", "loc", "wellcome", "vam", "commons",
+))
 MAX_SESSIONS = 24
 SESSION_TTL_SECONDS = 30 * 60
 BATCH_SIZE = 10
@@ -271,11 +282,11 @@ def normalize_result(item: dict, provider_rank: int = 0) -> dict:
         and bool(image_delivery)
         and image_delivery != "commons"
     )
-    preview_click_url = (
-        full_resolution_url or page_url
-        if requires_source_visit
-        else image_url or page_url
-    )
+    # The preview is a doorway to the collection record, where the complete
+    # description and rights context live. Keep the direct original as a
+    # separate capability so the desktop app can offer an explicit download.
+    preview_click_url = page_url or full_resolution_url or image_url
+    download_url = "" if requires_source_visit else image_url
     normalized = {
         "source": source_name,
         "source_label": SOURCE_LABELS.get(source_name, source_name.title()),
@@ -295,11 +306,9 @@ def normalize_result(item: dict, provider_rank: int = 0) -> dict:
         "placeholder_url": str(item.get("placeholder_url") or ""),
         "image_delivery": image_delivery,
         "full_resolution_url": full_resolution_url,
+        "download_url": download_url,
         "preview_click_url": preview_click_url,
-        "preview_click_action": (
-            "visit_website" if requires_source_visit or not image_url
-            else "open_full_image"
-        ),
+        "preview_click_action": "visit_website",
         "preview_width": int(item.get("preview_width") or 0),
         "preview_height": int(item.get("preview_height") or 0),
         "width": int(item.get("width") or 0),
@@ -878,13 +887,13 @@ def get_harvard_proxy_item(session_id: str, item_id: str) -> dict:
 
 
 def get_cacheable_detail_item(session_id: str, item_id: str) -> dict:
-    """Resolve a full image that the result says can be opened directly."""
+    """Resolve an image whose downloadable original is directly available."""
     session = get_session(session_id)
     with session.lock:
         item = session.item(item_id)
     if not item:
         raise InputError("Image is not part of this search.")
-    if item.get("preview_click_action") != "open_full_image":
+    if not item.get("download_url"):
         raise InputError("The source website is required for the full image.")
     image_url = str(item.get("image_url") or "")
     parsed = urllib.parse.urlparse(image_url)
@@ -1200,9 +1209,15 @@ class SearchHandler(BaseHTTPRequestHandler):
                 self.serve_static("index.html")
             elif url.path == "/beauty":
                 self.serve_static("beauty.html")
+            elif url.path == "/google-helper":
+                self.serve_static("google-helper.html")
             elif url.path == "/saint-peter-ranked":
                 self.serve_static("saint-peter-ranked.html")
-            elif url.path in ("/app.js", "/styles.css", "/beauty.js", "/beauty.css", "/gnosis-caduceus.svg"):
+            elif url.path in (
+                "/app.js", "/styles.css", "/beauty.js", "/beauty.css",
+                "/google-helper.js", "/google-ranking.js", "/google-helper.css",
+                "/gnosis-caduceus.svg",
+            ):
                 self.serve_static(url.path[1:])
             elif url.path == "/favicon.ico":
                 self.serve_static("gnosis-caduceus.svg")
@@ -1211,10 +1226,32 @@ class SearchHandler(BaseHTTPRequestHandler):
             elif url.path == "/api/sources":
                 self.send_json(200, {
                     "sources": [
-                        {"id": name, "label": label, "default": name in DEFAULT_SELECTED}
+                        {
+                            "id": name,
+                            "label": label,
+                            "default": name in DEFAULT_SELECTED,
+                            "google_domains": list(SOURCE_DOMAINS.get(name, ())),
+                            "google_images": name in GOOGLE_IMAGE_SOURCES,
+                        }
                         for name, label in SOURCE_LABELS.items()
                     ],
                 })
+            elif url.path == "/api/google-images/stage":
+                query = validate_query((params.get("q") or [""])[0])
+                selected = parse_sources((params.get("sources") or [""])[0])
+                try:
+                    requested_mp = int((params.get("mp") or ["0"])[0])
+                except ValueError as exc:
+                    raise InputError("Invalid megapixel stage.") from exc
+                if requested_mp not in (4, 9, 16, 25):
+                    raise InputError("Megapixel stage must be 4, 9, 16, or 25.")
+                self.send_json(200, search_google_stage(
+                    query,
+                    selected,
+                    requested_mp,
+                    dict(SOURCE_LABELS),
+                    DATA_DIR / "google-image-search-cache",
+                ))
             elif url.path == "/api/beauty/state":
                 if TOURNAMENT is None:
                     raise InputError("The optional tournament image pack is not installed.")
@@ -1313,6 +1350,10 @@ class SearchHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": str(exc)})
         except ImageProxyError as exc:
             self.send_json(502, {"error": str(exc)})
+        except GoogleVerificationRequired as exc:
+            self.send_json(429, {"error": str(exc), "code": "google_verification"})
+        except GoogleImageSearchError as exc:
+            self.send_json(502, {"error": str(exc), "code": "google_images"})
         except SearchCancelled as exc:
             self.send_json(409, {"error": str(exc)})
 

@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const signingIdentity = process.env.APPLE_SIGNING_IDENTITY;
 const notarizationEnabled = Boolean(
@@ -7,6 +8,16 @@ const notarizationEnabled = Boolean(
   process.env.APPLE_API_KEY &&
   process.env.APPLE_API_ISSUER
 );
+
+function prepareApplicationsAlias() {
+  const output = path.resolve('build/dmg-assets/Applications');
+  execFileSync('swift', [
+    path.resolve('scripts/generate-applications-alias.swift'),
+    path.resolve('assets/applications-folder.png'),
+    output
+  ], { stdio: 'inherit' });
+  return output;
+}
 
 const MACH_O_MAGICS = new Set([
   0xfeedface, 0xcefaedfe, 0xfeedfacf, 0xcffaedfe, 0xcafebabe, 0xbebafeca
@@ -78,16 +89,22 @@ module.exports = {
         icon: 'assets/icon.icns',
         background: 'assets/dmg-background.png',
         iconSize: 112,
-        contents: options => [
-          {
+        contents: options => {
+          const applicationsAlias = prepareApplicationsAlias();
+          return [{
             x: 186,
             y: 300,
             type: 'file',
             path: options.appPath,
             name: 'Gnosis Images.app'
-          },
-          { x: 472, y: 300, type: 'link', path: '/Applications' }
-        ],
+          }, {
+            x: 472,
+            y: 300,
+            type: 'file',
+            path: applicationsAlias,
+            name: 'Applications'
+          }];
+        },
         additionalDMGOptions: {
           'background-color': '#f7f2ed',
           window: {
