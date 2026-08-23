@@ -557,16 +557,23 @@ function modelWindowHtml() {
   return `<!doctype html>
     <meta charset="utf-8">
     <style>
-      :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #171714; color: #f5f1e8; }
-      main { width: 380px; }
-      h1 { margin: 0 0 20px; font-size: 18px; font-weight: 600; }
-      .track { height: 7px; overflow: hidden; border-radius: 999px; background: #34332e; }
-      .bar { width: 0; height: 100%; border-radius: inherit; background: #d7b46a; transition: width 120ms linear; }
-      .status { min-height: 18px; margin: 8px 0 20px; color: #bbb7ad; font-size: 13px; font-variant-numeric: tabular-nums; }
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: #f3ede4; color: #302823; }
+      .titlebar { height: 32px; display: none; align-items: center; padding-left: 88px; color: #f7f0e6; background: #602f40; font-size: 13px; font-weight: 650; -webkit-app-region: drag; }
+      body.macos .titlebar { display: flex; }
+      main { padding: 35px 44px 30px; }
+      h1 { margin: 0 0 20px; font: 500 21px/1.15 Georgia, "Times New Roman", serif; letter-spacing: -.01em; }
+      .track { height: 7px; overflow: hidden; border-radius: 999px; background: #ddd3ca; }
+      .bar { width: 0; height: 100%; border-radius: inherit; background: #74364a; transition: width 120ms linear; }
+      .status { min-height: 18px; margin: 8px 0 22px; color: #766a62; font-size: 13px; font-variant-numeric: tabular-nums; }
       .buttons { display: flex; justify-content: flex-end; }
-      a { padding: 7px 13px; border: 1px solid #555149; border-radius: 7px; color: #f5f1e8; text-decoration: none; font-size: 13px; }
+      a { padding: 8px 14px; border: 1px solid #602f40; border-radius: 8px; color: #fff; background: #602f40; box-shadow: 0 5px 14px rgba(96,47,64,.18); text-decoration: none; font-size: 13px; font-weight: 700; -webkit-app-region: no-drag; }
+      a:hover { background: #522837; border-color: #522837; }
+      a:focus-visible { outline: 2px solid rgba(96,47,64,.35); outline-offset: 3px; }
     </style>
+    <body class="${process.platform === 'darwin' ? 'macos' : ''}">
+    <header class="titlebar">Downloading image ranking model</header>
     <main>
       <h1>Downloading image ranking model.</h1>
       <div class="track"><div class="bar" id="bar"></div></div>
@@ -606,7 +613,9 @@ async function showModelProgressWindow() {
     minimizable: false,
     maximizable: false,
     autoHideMenuBar: true,
-    backgroundColor: '#171714',
+    backgroundColor: '#f3ede4',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    trafficLightPosition: { x: 18, y: 8 },
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true }
   });
   modelProgressWindow.on('close', () => {
@@ -979,8 +988,7 @@ function stopBackend() {
 }
 
 async function createApplication() {
-  let requiredModel = null;
-  if (app.isPackaged) requiredModel = await ensureRequiredModel();
+  const requiredModel = await ensureRequiredModel();
   const port = await reservePort();
   const command = backendCommand(port);
   const dataDirectory = path.join(app.getPath('userData'), 'data');
