@@ -232,6 +232,7 @@ function imageCandidates(item, { detail = false } = {}) {
 function applyImageSources(image, item, { detail = false } = {}) {
   const candidates = imageCandidates(item, { detail });
   let index = 0;
+  image.dataset.imageUrl = item.image_url || item.download_url || item.thumb_url || '';
   image.loading = detail ? 'eager' : 'lazy';
   image.decoding = 'async';
   if (item.source === 'aic') image.referrerPolicy = 'no-referrer';
