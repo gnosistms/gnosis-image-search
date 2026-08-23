@@ -127,18 +127,7 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-zip',
-      platforms: distribution === 'full' ? ['win32'] : distribution ? [] : ['darwin']
-    },
-    {
-      name: '@electron-forge/maker-squirrel',
-      platforms: distribution === 'full' ? [] : ['win32'],
-      config: {
-        name: 'gnosis_images',
-        authors: 'Hans',
-        description: 'Museum image search ranked by the PAMELA criterion model',
-        setupExe: `Gnosis-Images-${distributionLabel}-${packageVersion}-${targetArch}.exe`,
-        setupIcon: path.resolve('assets/icon.ico')
-      }
+      platforms: distribution ? ['win32'] : ['darwin']
     }
   ],
   publishers: [

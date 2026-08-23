@@ -1,6 +1,6 @@
 function compatibleUpdateAsset(release, platform = process.platform, arch = process.arch) {
   const assets = Array.isArray(release?.assets) ? release.assets : [];
-  const extensions = platform === 'darwin' ? ['.dmg'] : platform === 'win32' ? ['.exe'] : [];
+  const extensions = platform === 'darwin' ? ['.dmg'] : platform === 'win32' ? ['.zip'] : [];
   const architecture = arch === 'arm64' ? /arm64|aarch64/i : /x64|x86_64|amd64/i;
   const candidates = assets.filter(asset => {
     const name = String(asset?.name || '');

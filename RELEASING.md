@@ -27,8 +27,8 @@ x64 installers are built in parallel and are currently unsigned.
    `SSL_CERT_FILE`; the app must use the Certifi CA bundle included in the
    packaged backend.
 8. Test the Windows x64 full `.zip` (extract it, then run `Gnosis Images.exe`)
-   and update `.exe` on a clean Windows system. Windows builds are currently
-   unsigned and may show a Microsoft
+   and model-free update `.zip` on a clean Windows system. Windows builds are
+   currently unsigned and may show a Microsoft
    Defender SmartScreen warning until a Windows code-signing certificate is
    configured.
 

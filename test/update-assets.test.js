@@ -22,13 +22,13 @@ test('updater never falls back to a full installer', () => {
   assert.equal(compatibleUpdateAsset(release, 'darwin', 'arm64'), null);
 });
 
-test('Windows updater selects only an update executable', () => {
+test('Windows updater selects only a model-free update ZIP', () => {
   const release = { assets: [
-    asset('Gnosis-Images-Full-Installer-1.2.0-x64.exe'),
-    asset('Gnosis-Images-Update-1.2.0-x64.exe'),
+    asset('Gnosis-Images-Full-Installer-1.2.0-x64.zip'),
+    asset('Gnosis-Images-Update-1.2.0-x64.zip'),
   ] };
   assert.equal(
     compatibleUpdateAsset(release, 'win32', 'x64').name,
-    'Gnosis-Images-Update-1.2.0-x64.exe'
+    'Gnosis-Images-Update-1.2.0-x64.zip'
   );
 });

@@ -21,3 +21,7 @@ Move-Item -Force $FullZip.FullName (Join-Path $FullZip.DirectoryName $FullZipNam
 $env:GNOSIS_DISTRIBUTION = 'update'
 & npx electron-forge make --platform=win32 --arch=x64
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$UpdateZip = Get-ChildItem (Join-Path $ProjectDir 'out\update\make\zip\win32\x64\*.zip') | Select-Object -First 1
+if (-not $UpdateZip) { throw 'Forge did not produce the Windows update ZIP.' }
+$UpdateZipName = "Gnosis-Images-Update-$Version-x64.zip"
+Move-Item -Force $UpdateZip.FullName (Join-Path $UpdateZip.DirectoryName $UpdateZipName)

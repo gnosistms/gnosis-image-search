@@ -643,19 +643,24 @@ async function askToInstallUpdate(update) {
     mainWindow.show();
     mainWindow.focus();
   }
+  const manualWindowsUpdate = process.platform === 'win32' && path.extname(update.filePath).toLowerCase() === '.zip';
   const response = await showMessageBox({
     type: 'info',
     title: 'Install update',
     message: `Install Gnosis Images version ${update.version}?`,
-    detail: process.platform === 'darwin'
-      ? 'The macOS installer will open when you click Install.'
-      : 'The installer will open when you click Install.',
-    buttons: ['Later', 'Install'],
+    detail: manualWindowsUpdate
+      ? 'The update ZIP will be shown in File Explorer. Close Gnosis Images, extract the ZIP, and replace your existing Gnosis Images folder.'
+      : 'The macOS installer will open when you click Install.',
+    buttons: ['Later', manualWindowsUpdate ? 'Show in Folder' : 'Install'],
     defaultId: 1,
     cancelId: 0,
     noLink: true
   });
   if (response.response !== 1) return;
+  if (manualWindowsUpdate) {
+    shell.showItemInFolder(update.filePath);
+    return;
+  }
   const error = await shell.openPath(update.filePath);
   if (error) {
     await showMessageBox({
