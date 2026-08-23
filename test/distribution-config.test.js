@@ -36,3 +36,12 @@ test('update distribution cannot contain the staged model', () => {
   const zip = config.makers.find(maker => maker.name === '@electron-forge/maker-zip');
   assert.deepEqual(zip.platforms, ['win32']);
 });
+
+test('packager excludes development data using absolute paths', () => {
+  const config = distributionConfig('update', 'x64');
+  const ignored = filePath => config.packagerConfig.ignore.some(pattern => pattern.test(filePath));
+  assert.equal(ignored('/workspace/gnosis/data/pamela/PAMELA.zip'), true);
+  assert.equal(ignored('C:\\workspace\\gnosis\\data\\pamela\\PAMELA.zip'), true);
+  assert.equal(ignored('/workspace/gnosis/deploy/output.zip'), true);
+  assert.equal(ignored('/workspace/gnosis/electron/main.js'), false);
+});

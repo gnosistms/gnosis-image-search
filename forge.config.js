@@ -77,14 +77,14 @@ module.exports = {
       }
     } : {}),
     ignore: [
-      /^\/\.packaging-python($|\/)/,
-      /^\/assets\/icon\.iconset($|\/)/,
-      /^\/build($|\/)/,
-      /^\/data($|\/)/,
-      /^\/deploy($|\/)/,
-      /^\/docs($|\/)/,
-      /^\/vendor($|\/)/,
-      /^\/web($|\/)/
+      /[\\/]\.packaging-python(?:[\\/]|$)/,
+      /[\\/]assets[\\/]icon\.iconset(?:[\\/]|$)/,
+      /[\\/]build(?:[\\/]|$)/,
+      /[\\/]data(?:[\\/]|$)/,
+      /[\\/]deploy(?:[\\/]|$)/,
+      /[\\/]docs(?:[\\/]|$)/,
+      /[\\/]vendor(?:[\\/]|$)/,
+      /[\\/]web(?:[\\/]|$)/
     ],
     extraResource: [
       'build/backend',

@@ -5,6 +5,8 @@ notarization. A Mac App Store provisioning profile is not required. Windows
 x64 installers are built in parallel and are currently unsigned.
 The Windows backend uses PyTorch's CPU-only wheel so each release asset stays
 below GitHub's per-file size limit.
+Electron Packager ignore rules are tested with absolute paths so research data
+and build-only files cannot leak into desktop packages.
 
 1. Enroll the release owner in the Apple Developer Program.
 2. In Xcode, open **Settings → Accounts**, add the Apple ID, select the team,
