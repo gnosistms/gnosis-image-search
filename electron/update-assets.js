@@ -11,4 +11,10 @@ function compatibleUpdateAsset(release, platform = process.platform, arch = proc
   return candidates.find(asset => architecture.test(asset.name)) || candidates[0] || null;
 }
 
-module.exports = { compatibleUpdateAsset };
+function compatibleModelAsset(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  return assets.find(asset => asset?.browser_download_url
+    && /^Gnosis-Images-Image-Ranking-Model-.*\.gnosis-model$/i.test(String(asset.name || ''))) || null;
+}
+
+module.exports = { compatibleModelAsset, compatibleUpdateAsset };

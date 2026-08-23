@@ -260,6 +260,7 @@ def _filter_aic_commons_quality(artworks, commons):
 _HF_AIC_ROWS_PATH = os.path.join(BASE, "aic_hf_rows.json")
 _HF_AIC_ROW_COUNT = 64019
 _HF_AIC_CACHE_TTL = 20 * 60
+AIC_SEARCH_FALLBACK_MAX_SCORE = 0.001
 _hf_aic_images = {}
 _hf_aic_row_map = None
 _hf_aic_lock = threading.RLock()
@@ -373,10 +374,23 @@ def _wayback_aic_images_for(artworks):
     return {artwork_id: preview for (artwork_id, _), preview in zip(items, previews)
             if preview}
 
+
+def _aic_search_is_fallback(data):
+    """Detect AIC's near-zero-score match-all response for unmatched text."""
+    records = (data or {}).get("data") or []
+    scores = [record.get("_score") for record in records]
+    # Older fixtures or a future API response may omit _score. In that case,
+    # preserve the response instead of guessing that it is irrelevant.
+    if not scores or any(not isinstance(score, (int, float)) for score in scores):
+        return False
+    return max(scores) < AIC_SEARCH_FALLBACK_MAX_SCORE
+
 def aic(query, need, cue=None):
     d = _get_json(f"https://api.artic.edu/api/v1/artworks/search?q={_q(query)}"
                   f"&limit={need * 2}&fields=id,title,artist_display,date_display,"
                   f"medium_display,image_id,is_public_domain,thumbnail", "aic")
+    if _aic_search_is_fallback(d):
+        return []
     artworks = [a for a in (d or {}).get("data", [])
                 if a.get("image_id") and a.get("is_public_domain")][:need]
     artwork_ids = [a.get("id") for a in artworks]

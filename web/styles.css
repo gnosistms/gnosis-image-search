@@ -135,6 +135,13 @@ body.desktop-app .empty-state button, body.desktop-app .empty-state input, body.
 .download-full-image:focus-visible, .copy-full-size-image-url:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .download-full-image::after, .copy-full-size-image-url::after { content: attr(data-tooltip); bottom: calc(100% + 6px); left: 0; transform: none; }
 .download-full-image svg, .copy-full-size-image-url svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.copy-full-size-image-url .copy-check-icon { display: none; }
+.copy-full-size-image-url.is-copied { background: #2f7d55; }
+.copy-full-size-image-url.is-copied .copy-link-icon { display: none; }
+.copy-full-size-image-url.is-copied .copy-check-icon { display: block; }
+.copy-full-size-image-url.is-copied::after,
+.copy-full-size-image-url.is-copy-error::after { opacity: 1; }
+.copy-full-size-image-url.is-copy-error { background: #9d3d3d; }
 .copy-full-size-image-url:disabled { color: rgba(255,255,255,.45); background: rgba(29,27,25,.44); cursor: not-allowed; }
 .detail-info { padding: 18px 19px 16px; border-bottom: 1px solid var(--line); }
 .detail-source { min-width: 0; margin: 0; overflow: hidden; color: var(--accent); font-size: 11px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }

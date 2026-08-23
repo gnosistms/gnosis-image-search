@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage the default SigLIP checkpoint for the full desktop installer."""
+"""Stage the default SigLIP checkpoint for its separate release package."""
 
 from __future__ import annotations
 

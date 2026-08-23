@@ -1164,6 +1164,44 @@ class BatchTests(unittest.TestCase):
         self.assertEqual((item["width"], item["height"]), (1000, 2000))
         self.assertTrue(item["placeholder_url"].startswith("data:image/gif"))
 
+    def test_aic_discards_near_zero_score_match_all_fallback(self):
+        response = {"data": [{
+            "_score": 0.0000245, "id": 11, "title": "Self-Portrait",
+            "image_id": "fallback", "is_public_domain": True,
+            "thumbnail": {},
+        }, {
+            "_score": 0.0000240, "id": 27992,
+            "title": "A Sunday on La Grande Jatte — 1884",
+            "image_id": "fallback-2", "is_public_domain": True,
+            "thumbnail": {},
+        }]}
+        original = sources._get_json
+        sources._get_json = lambda *args, **kwargs: response
+        try:
+            self.assertEqual(sources.aic("samael aun weor", 2), [])
+        finally:
+            sources._get_json = original
+
+    def test_aic_keeps_genuinely_scored_search_results(self):
+        response = {"data": [{
+            "_score": 55.6, "id": 16327, "title": "The Annunciation",
+            "image_id": "annunciation", "is_public_domain": True,
+            "thumbnail": {},
+        }]}
+        originals = (sources._get_json, sources._aic_commons_images,
+                     sources._hf_aic_images_for, sources._wayback_aic_images_for)
+        sources._get_json = lambda *args, **kwargs: response
+        sources._aic_commons_images = lambda ids: {}
+        sources._hf_aic_images_for = lambda ids: {}
+        sources._wayback_aic_images_for = lambda artworks: {}
+        try:
+            items = sources.aic("annunciation", 1)
+        finally:
+            (sources._get_json, sources._aic_commons_images,
+             sources._hf_aic_images_for,
+             sources._wayback_aic_images_for) = originals
+        self.assertEqual([item["source_id"] for item in items], ["16327"])
+
     def test_aic_uses_hugging_face_preview_and_preserves_native_dimensions(self):
         response = {
             "config": {"iiif_url": "https://images.example/iiif/2"},

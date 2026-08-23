@@ -3,8 +3,9 @@
 Public macOS direct-download builds require Apple Developer ID signing and
 notarization. A Mac App Store provisioning profile is not required. Windows
 x64 installers are built in parallel and are currently unsigned.
-The Windows backend uses PyTorch's CPU-only wheel so each release asset stays
-below GitHub's per-file size limit.
+The Windows backend uses PyTorch's CPU-only wheel. Both macOS and Windows app
+packages are model-free; the image ranking model is published once as a
+platform-neutral `.gnosis-model` release asset.
 Electron Packager ignore rules are tested with absolute paths so research data
 and build-only files cannot leak into desktop packages.
 CI rejects any individual release asset larger than 1.9 GiB before publication.
@@ -25,9 +26,10 @@ CI rejects any individual release asset larger than 1.9 GiB before publication.
    storage into this repository. Unsigned macOS builds cannot use automatic
    updates.
 6. Bump `package.json`, commit, and push a matching tag such as `v0.2.0`.
-7. Inspect both release artifacts on a clean machine:
-   `Gnosis-Images-Full-Installer-*` must contain and seed the SigLIP checkpoint,
-   while `Gnosis-Images-Update-*` must omit it and preserve the seeded cache.
+7. Inspect the release artifacts on a clean machine. Both `Full-Installer` and
+   `Update` packages must omit the SigLIP checkpoint. On first launch, confirm
+   the required download modal appears, cancellation closes the app, and the
+   platform-neutral model package is installed before the backend starts.
    Also confirm that a remote collection search works without setting
    `SSL_CERT_FILE`; the app must use the Certifi CA bundle included in the
    packaged backend.
@@ -37,11 +39,10 @@ CI rejects any individual release asset larger than 1.9 GiB before publication.
    Defender SmartScreen warning until a Windows code-signing certificate is
    configured.
 
-The app checks GitHub Releases at startup. It prompts before downloading the
-explicitly named, model-free `Update` artifact and installs only after the user
-accepts. The public download page selects the `Full-Installer` artifact, which
-includes the default model and seeds it into the user-owned Application Support
-model cache before the backend starts. Model weights and the local embedding
-database remain untouched by application updates. Never rename an update to
-look like a full installer (or vice versa): asset selection intentionally does
-not fall back between them.
+The app checks GitHub Releases at startup. If the required model is absent, it
+downloads and verifies the `.gnosis-model` asset into the user-owned model cache
+before starting the backend; cancelling closes the app. Update checks select the
+explicitly named, model-free `Update` artifact, while the public download page
+selects `Full-Installer`. Model weights and the local embedding database remain
+untouched by application updates. Never rename an update to look like a full
+installer (or vice versa): asset selection intentionally does not fall back.

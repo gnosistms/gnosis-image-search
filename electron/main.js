@@ -7,8 +7,9 @@ const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
 const { backendEnvironment, packagedBackendExecutable } = require('./backend-runtime');
-const { reconcileModelConfiguration, seedBundledModel } = require('./model-config');
-const { compatibleUpdateAsset } = require('./update-assets');
+const { reconcileModelConfiguration } = require('./model-config');
+const { installModelPackage, installedModel } = require('./model-package');
+const { compatibleModelAsset, compatibleUpdateAsset } = require('./update-assets');
 
 const APP_NAME = 'Gnosis Images';
 const APP_DATA_NAME = 'Gnosis Image Search';
@@ -74,6 +75,8 @@ let mainWindow = null;
 let updateProgressWindow = null;
 let updateDownload = null;
 let downloadedUpdate = null;
+let modelProgressWindow = null;
+let modelDownload = null;
 let quitting = false;
 const UPDATE_OWNER = 'gnosistms';
 const UPDATE_REPOSITORY = 'gnosis-image-search';
@@ -550,6 +553,84 @@ function updateWindowHtml(version) {
     </script>`;
 }
 
+function modelWindowHtml() {
+  return `<!doctype html>
+    <meta charset="utf-8">
+    <style>
+      :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #171714; color: #f5f1e8; }
+      main { width: 380px; }
+      h1 { margin: 0 0 20px; font-size: 18px; font-weight: 600; }
+      .track { height: 7px; overflow: hidden; border-radius: 999px; background: #34332e; }
+      .bar { width: 0; height: 100%; border-radius: inherit; background: #d7b46a; transition: width 120ms linear; }
+      .status { min-height: 18px; margin: 8px 0 20px; color: #bbb7ad; font-size: 13px; font-variant-numeric: tabular-nums; }
+      .buttons { display: flex; justify-content: flex-end; }
+      a { padding: 7px 13px; border: 1px solid #555149; border-radius: 7px; color: #f5f1e8; text-decoration: none; font-size: 13px; }
+    </style>
+    <main>
+      <h1>Downloading image ranking model.</h1>
+      <div class="track"><div class="bar" id="bar"></div></div>
+      <p class="status" id="status">Starting download…</p>
+      <div class="buttons"><a href="gnosis-model:cancel">Cancel and close</a></div>
+    </main>
+    <script>
+      window.setDownloadProgress = (percent, received, total) => {
+        document.getElementById('bar').style.width = percent + '%';
+        const format = bytes => bytes >= 1073741824 ? (bytes / 1073741824).toFixed(2) + ' GB'
+          : bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+        document.getElementById('status').textContent = total
+          ? percent + '% — ' + format(received) + ' of ' + format(total)
+          : format(received) + ' downloaded';
+      };
+    </script>`;
+}
+
+function cancelModelDownload() {
+  if (modelDownload) {
+    modelDownload.cancelled = true;
+    modelDownload.request?.destroy(new Error('Model download cancelled.'));
+    modelDownload.file?.destroy();
+    if (modelDownload.partialPath) fs.promises.unlink(modelDownload.partialPath).catch(() => {});
+  }
+  quitting = true;
+  app.quit();
+}
+
+async function showModelProgressWindow() {
+  modelProgressWindow = new BrowserWindow({
+    title: 'Downloading image ranking model',
+    width: 470,
+    height: 235,
+    show: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#171714',
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true }
+  });
+  modelProgressWindow.on('close', () => {
+    if (modelDownload && !modelDownload.completed && !modelDownload.cancelled) cancelModelDownload();
+  });
+  modelProgressWindow.on('closed', () => { modelProgressWindow = null; });
+  modelProgressWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== 'gnosis-model:cancel') return;
+    event.preventDefault();
+    cancelModelDownload();
+  });
+  await modelProgressWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(modelWindowHtml())}`);
+  if (modelProgressWindow && !modelProgressWindow.isDestroyed()) modelProgressWindow.show();
+}
+
+function reportModelProgress(received, total) {
+  const percent = total ? Math.min(100, Math.round((received / total) * 100)) : 0;
+  if (modelProgressWindow && !modelProgressWindow.isDestroyed()) {
+    modelProgressWindow.webContents.executeJavaScript(
+      `window.setDownloadProgress(${percent}, ${received}, ${total})`
+    ).catch(() => {});
+  }
+}
+
 async function showUpdateProgressWindow(version) {
   if (updateProgressWindow && !updateProgressWindow.isDestroyed()) {
     updateProgressWindow.show();
@@ -600,7 +681,7 @@ function reportUpdateProgress(received, total) {
   }
 }
 
-function downloadFile(url, destination, state, redirectsRemaining = 5) {
+function downloadFile(url, destination, state, onProgress = reportUpdateProgress, redirectsRemaining = 5) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     const client = parsedUrl.protocol === 'http:' ? http : https;
@@ -611,7 +692,7 @@ function downloadFile(url, destination, state, redirectsRemaining = 5) {
           reject(new Error('The update download redirected too many times.'));
           return;
         }
-        downloadFile(new URL(response.headers.location, parsedUrl).href, destination, state, redirectsRemaining - 1).then(resolve, reject);
+        downloadFile(new URL(response.headers.location, parsedUrl).href, destination, state, onProgress, redirectsRemaining - 1).then(resolve, reject);
         return;
       }
       if (response.statusCode !== 200) {
@@ -628,7 +709,7 @@ function downloadFile(url, destination, state, redirectsRemaining = 5) {
         received += chunk.length;
         if (Date.now() - lastReport >= 100 || received === total) {
           lastReport = Date.now();
-          reportUpdateProgress(received, total);
+          onProgress(received, total);
         }
       });
       response.on('error', reject);
@@ -639,6 +720,53 @@ function downloadFile(url, destination, state, redirectsRemaining = 5) {
     state.request = request;
     request.on('error', reject);
   });
+}
+
+async function ensureRequiredModel() {
+  const userData = app.getPath('userData');
+  const current = installedModel(userData);
+  if (current.installed) return current;
+  const downloadDirectory = path.join(userData, 'models', '.downloads');
+  await fs.promises.mkdir(downloadDirectory, { recursive: true });
+  const partialPath = path.join(downloadDirectory, 'image-ranking-model.gnosis-model.download');
+  await fs.promises.unlink(partialPath).catch(() => {});
+  const state = { request: null, file: null, cancelled: false, completed: false, partialPath };
+  modelDownload = state;
+  await showModelProgressWindow();
+  try {
+    let modelUrl = process.env.GNOSIS_MODEL_DOWNLOAD_URL || '';
+    if (!modelUrl) {
+      const release = await latestRelease();
+      const asset = compatibleModelAsset(release);
+      if (!asset) throw new Error('No image ranking model is attached to the latest release.');
+      modelUrl = asset.browser_download_url;
+    }
+    await downloadFile(modelUrl, partialPath, state, reportModelProgress);
+    if (state.cancelled) throw Object.assign(new Error('Model download cancelled.'), { code: 'MODEL_DOWNLOAD_CANCELLED' });
+    const result = await installModelPackage(partialPath, userData);
+    state.completed = true;
+    await fs.promises.unlink(partialPath).catch(() => {});
+    if (modelProgressWindow && !modelProgressWindow.isDestroyed()) modelProgressWindow.close();
+    modelDownload = null;
+    return { installed: true, manifest: result.manifest, target: result.target };
+  } catch (error) {
+    await fs.promises.unlink(partialPath).catch(() => {});
+    if (state.cancelled) throw Object.assign(error, { code: 'MODEL_DOWNLOAD_CANCELLED' });
+    state.completed = true;
+    if (modelProgressWindow && !modelProgressWindow.isDestroyed()) modelProgressWindow.close();
+    modelDownload = null;
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'Image ranking model download failed',
+      message: 'Gnosis Images could not download the image ranking model.',
+      detail: 'Check your internet connection, then reopen Gnosis Images to try again.',
+      buttons: ['Cancel and close'],
+      noLink: true
+    });
+    quitting = true;
+    app.quit();
+    throw Object.assign(error, { code: 'MODEL_DOWNLOAD_CANCELLED' });
+  }
 }
 
 function cancelUpdateDownload() {
@@ -851,18 +979,15 @@ function stopBackend() {
 }
 
 async function createApplication() {
+  let requiredModel = null;
+  if (app.isPackaged) requiredModel = await ensureRequiredModel();
   const port = await reservePort();
   const command = backendCommand(port);
   const dataDirectory = path.join(app.getPath('userData'), 'data');
-  let seededModel = null;
-  if (app.isPackaged) {
-    seededModel = seedBundledModel(app.getPath('userData'), process.resourcesPath);
-    console.log(`Bundled model: ${seededModel.status} (${seededModel.target})`);
-  }
   const { configPath, value: modelConfig } = reconcileModelConfiguration(app.getPath('userData'));
   const activeModel = modelConfig.profiles?.[modelConfig.activeProfile] || {};
-  const seededSnapshot = seededModel && path.join(seededModel.target, 'snapshot');
-  if (seededSnapshot && fs.existsSync(seededSnapshot)) activeModel.modelSource = seededSnapshot;
+  const installedSnapshot = requiredModel && path.join(requiredModel.target, 'snapshot');
+  if (installedSnapshot && fs.existsSync(installedSnapshot)) activeModel.modelSource = installedSnapshot;
   console.log(`Model configuration: ${configPath}`);
   backend = spawn(command.executable, command.args, {
     env: backendEnvironment({
@@ -931,6 +1056,7 @@ else {
     installApplicationMenu();
     return createApplication();
   }).catch((error) => {
+    if (error?.code === 'MODEL_DOWNLOAD_CANCELLED') return;
     dialog.showErrorBox('Gnosis Images could not start', error.stack || String(error));
     app.quit();
   });

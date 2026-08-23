@@ -7,6 +7,34 @@ on:
 permissions:
   contents: write
 jobs:
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install huggingface_hub==0.36.0
+      - name: Download and package image ranking model
+        run: |
+          python scripts/prepare-bundled-model.py
+          python scripts/package-model.py
+      - name: Verify model release asset size
+        run: |
+          asset=$(find out/model -type f -name '*.gnosis-model' -print -quit)
+          if [ -z "$asset" ]; then
+            echo "The image ranking model package was not created." >&2
+            exit 1
+          fi
+          if [ "$(stat -c %s "$asset")" -gt 1992294400 ]; then
+            echo "The image ranking model package exceeds 1.9 GiB: $asset" >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gnosis-image-search-ranking-model
+          path: out/model/*.gnosis-model
+
   macos:
     runs-on: macos-15
     steps:
@@ -63,6 +91,12 @@ jobs:
           EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      - name: Verify both macOS packages are model-free
+        run: |
+          if find out/full out/update -type d -name bundled-models -print -quit | grep -q .; then
+            echo "A macOS application package contains bundled model files." >&2
+            exit 1
+          fi
       - name: Verify macOS release asset sizes
         run: |
           oversized=$(find out/full/make out/update/make -type f -name '*.dmg' -size +1900M -print -quit)
@@ -107,10 +141,6 @@ jobs:
         env:
           BACKEND_PYTHON: ${{ github.workspace }}\.backend-venv\Scripts\python.exe
           EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
-      - name: Stage bundled model
-        run: '& $env:BACKEND_PYTHON scripts/prepare-bundled-model.py'
-        env:
-          BACKEND_PYTHON: ${{ github.workspace }}\.backend-venv\Scripts\python.exe
       - name: Package full Windows installer
         run: |
           $env:GNOSIS_TARGET_ARCH = 'x64'
@@ -133,6 +163,21 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $name = "Gnosis-Images-Update-$version-x64.zip"
           Move-Item -Force $zip.FullName (Join-Path $zip.DirectoryName $name)
+      - name: Verify both Windows packages are model-free
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fullExe = Get-ChildItem 'out\full' -Recurse -Filter 'Gnosis Images.exe' |
+            Where-Object { $_.FullName -notmatch '\\make\\' } |
+            Select-Object -First 1
+          $updateExe = Get-ChildItem 'out\update' -Recurse -Filter 'Gnosis Images.exe' |
+            Where-Object { $_.FullName -notmatch '\\make\\' } |
+            Select-Object -First 1
+          if (-not $fullExe -or -not $updateExe) { throw 'Could not find both packaged Windows executables.' }
+          foreach ($exe in $fullExe, $updateExe) {
+            $bundledModels = Join-Path $exe.Directory.FullName 'resources\bundled-models'
+            if (Test-Path $bundledModels) { throw "Windows package contains bundled model files: $bundledModels" }
+          }
       - name: Verify Windows release asset sizes
         run: |
           $oversized = Get-ChildItem 'out\full\make', 'out\update\make' -Recurse -Filter '*.zip' |
@@ -148,7 +193,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [macos, windows]
+    needs: [model, macos, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -156,12 +201,13 @@ jobs:
           pattern: gnosis-image-search-*
           path: release-assets
           merge-multiple: true
-      # Upload the small update first so clients from releases predating the
-      # split (which selected the first compatible asset) also avoid the model.
-      - name: Publish model-free update installers
+      # Publish the required model with the update installers so a newly
+      # installed app can never observe a release that lacks its model asset.
+      - name: Publish required model and model-free update installers
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            release-assets/*.gnosis-model
             release-assets/update/make/**/*.dmg
             release-assets/update/make/**/*.zip
           draft: false

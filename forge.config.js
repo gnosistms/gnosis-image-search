@@ -83,13 +83,11 @@ module.exports = {
       /[\\/]data(?:[\\/]|$)/,
       /[\\/]deploy(?:[\\/]|$)/,
       /[\\/]docs(?:[\\/]|$)/,
+      /[\\/]out(?:[\\/]|$)/,
       /[\\/]vendor(?:[\\/]|$)/,
       /[\\/]web(?:[\\/]|$)/
     ],
-    extraResource: [
-      'build/backend',
-      ...(distribution === 'full' ? ['build/bundled-models'] : [])
-    ]
+    extraResource: ['build/backend']
   },
   makers: [
     {

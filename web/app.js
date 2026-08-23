@@ -21,6 +21,7 @@ const detailDimensionsOverlay = document.querySelector('#detail-dimensions-overl
 const detailDownloadOverlay = document.querySelector('#detail-download-overlay');
 const downloadFullImage = document.querySelector('#download-full-image');
 const copyFullSizeImageUrl = document.querySelector('#copy-full-size-image-url');
+const copyImageUrlStatus = document.querySelector('#copy-image-url-status');
 const detailTitle = document.querySelector('#detail-title');
 const detailSource = document.querySelector('#detail-source');
 const detailDescription = document.querySelector('#detail-description');
@@ -49,6 +50,28 @@ const galleryTiles = new Map();
 const panelItems = new Map();
 const searchControllers = new Set();
 const shownSourceAlerts = new Set();
+let copyFeedbackTimer;
+
+function clearCopyFeedback() {
+  clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = undefined;
+  copyFullSizeImageUrl.classList.remove('is-copied', 'is-copy-error');
+  copyImageUrlStatus.textContent = '';
+}
+
+function showCopyFeedback({ message, tooltip, className, duration = 1500 }) {
+  clearCopyFeedback();
+  copyFullSizeImageUrl.classList.add(className);
+  copyFullSizeImageUrl.dataset.tooltip = tooltip;
+  copyImageUrlStatus.textContent = message;
+  copyFeedbackTimer = setTimeout(() => {
+    clearCopyFeedback();
+    const item = findItem(copyFullSizeImageUrl.dataset.itemId);
+    const state = GnosisFullSizeImageUrl.controlState(item);
+    copyFullSizeImageUrl.dataset.tooltip = state.tooltip;
+  }, duration);
+}
+
 function selectedSources() {
   return [...sourceOptions.querySelectorAll('input:checked')].map(input => input.value);
 }
@@ -521,6 +544,7 @@ function findItem(id) {
 async function openDetails(id, previewImage) {
   const item = findItem(id);
   if (!item) return;
+  clearCopyFeedback();
   selectedItemId = id;
   gallery.querySelectorAll('.image-tile').forEach(tile =>
     tile.classList.toggle('selected', tile.dataset.id === id));
@@ -613,8 +637,22 @@ copyFullSizeImageUrl.addEventListener('click', async () => {
     } else {
       await navigator.clipboard.writeText(url);
     }
+    if (copyFullSizeImageUrl.dataset.itemId === item.id) {
+      showCopyFeedback({
+        message: 'Image URL copied to clipboard.',
+        tooltip: 'Copied!',
+        className: 'is-copied',
+      });
+    }
   } catch (_error) {
-    window.alert('The full-sized image URL could not be copied.');
+    if (copyFullSizeImageUrl.dataset.itemId === item.id) {
+      showCopyFeedback({
+        message: 'The image URL could not be copied.',
+        tooltip: "Couldn't copy URL",
+        className: 'is-copy-error',
+        duration: 2500,
+      });
+    }
   }
 });
 
