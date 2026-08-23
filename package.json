@@ -11,7 +11,7 @@
   "scripts": {
     "start": "electron-forge start",
     "build:backend": "bash scripts/build-backend.sh",
-    "generate:dmg": "python3 scripts/generate-dmg-background.py",
+    "generate:dmg": "${BACKEND_PYTHON:-python3} scripts/generate-dmg-background.py",
     "package:mac": "npm run generate:dmg && npm run build:backend && electron-forge package --platform=darwin --arch=arm64",
     "make:mac": "npm run generate:dmg && npm run build:backend && electron-forge make --platform=darwin --arch=arm64",
     "publish:mac": "npm run generate:dmg && npm run build:backend && electron-forge publish --platform=darwin --arch=arm64",
