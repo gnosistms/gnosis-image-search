@@ -7,7 +7,8 @@ const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
 const { backendEnvironment, packagedBackendExecutable } = require('./backend-runtime');
-const { reconcileModelConfiguration } = require('./model-config');
+const { reconcileModelConfiguration, seedBundledModel } = require('./model-config');
+const { compatibleUpdateAsset } = require('./update-assets');
 
 const APP_NAME = 'Gnosis Images';
 const APP_DATA_NAME = 'Gnosis Image Search';
@@ -499,16 +500,6 @@ function showMessageBox(options) {
   return dialog.showMessageBox(options);
 }
 
-function compatibleUpdateAsset(release) {
-  const assets = Array.isArray(release.assets) ? release.assets : [];
-  const extensions = process.platform === 'darwin' ? ['.dmg', '.zip'] : ['.exe', '.msi'];
-  const candidates = assets.filter(asset =>
-    asset.browser_download_url && extensions.some(extension => asset.name.toLowerCase().endsWith(extension))
-  );
-  const architecture = process.arch === 'arm64' ? /arm64|aarch64/i : /x64|x86_64|amd64/i;
-  return candidates.find(asset => architecture.test(asset.name)) || candidates[0] || null;
-}
-
 function updateWindowHtml(version) {
   const safeVersion = String(version).replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -845,8 +836,15 @@ async function createApplication() {
   const port = await reservePort();
   const command = backendCommand(port);
   const dataDirectory = path.join(app.getPath('userData'), 'data');
+  let seededModel = null;
+  if (app.isPackaged) {
+    seededModel = seedBundledModel(app.getPath('userData'), process.resourcesPath);
+    console.log(`Bundled model: ${seededModel.status} (${seededModel.target})`);
+  }
   const { configPath, value: modelConfig } = reconcileModelConfiguration(app.getPath('userData'));
   const activeModel = modelConfig.profiles?.[modelConfig.activeProfile] || {};
+  const seededSnapshot = seededModel && path.join(seededModel.target, 'snapshot');
+  if (seededSnapshot && fs.existsSync(seededSnapshot)) activeModel.modelSource = seededSnapshot;
   console.log(`Model configuration: ${configPath}`);
   backend = spawn(command.executable, command.args, {
     env: backendEnvironment({

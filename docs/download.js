@@ -22,8 +22,9 @@ async function configureDownload() {
     if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
     const release = await response.json();
     const assets = release.assets || [];
+    const installers = assets.filter(item => /(?:^|[-_. ])(?:full[-_. ]?)?installer(?:[-_. ]|$)/i.test(item.name));
     const asset = detected.extensions
-      .map(extension => assets.find(item => item.name.toLowerCase().endsWith(extension)))
+      .map(extension => installers.find(item => item.name.toLowerCase().endsWith(extension)))
       .find(Boolean);
     if (asset) {
       download = {

@@ -6,12 +6,15 @@ in parallel and orders results by image size × the learned criterion score.
 
 ## Why it is a desktop app
 
-The Electron interface supervises a bundled Python/PyTorch search engine. Model
-weights, comparison preferences, indexes, and the embedding cache remain in
-user-owned folders outside the application bundle. Updating the application
-therefore does not download an unchanged checkpoint again. Managed model
-weights live in an app-owned cache, so an application update can safely replace
-a model and remove its retired files without touching shared Hugging Face data.
+The Electron interface supervises a bundled Python/PyTorch search engine. The
+full installer includes the default SigLIP checkpoint and seeds it into a
+user-owned cache before starting the backend, so first use never begins with a
+silent multi-gigabyte download. Comparison preferences, indexes, and embeddings
+are stored alongside that cache outside the replaceable application data.
+Routine releases provide a separately named, model-free update installer and
+therefore do not download an unchanged checkpoint again. Managed model profiles
+can still deliberately replace a checkpoint and remove its retired app-owned
+files without touching shared Hugging Face data.
 
 On macOS the app creates its writable data under:
 
@@ -53,16 +56,17 @@ decryption key in separate files inside the packaged backend. This keeps the
 key out of source control, request URLs, logs, and casual inspection; it is
 application obfuscation rather than a secure secret store.
 
-The packaged application is written under `out/`.
+Release builds are written under `out/full/` and `out/update/`.
 
 ## Distribution
 
 The static download site is in `docs/` and is deployed through GitHub Pages. It
-queries the latest GitHub Release and selects the appropriate asset for macOS,
-Windows, or Linux.
+queries the latest GitHub Release and selects only the `Full-Installer` asset
+for macOS or Windows.
 
 The application checks the latest public GitHub Release at startup. If a newer
-version exists, it asks for permission before downloading and installing it.
+version exists, it asks for permission before downloading and installing only
+the smaller `Update` asset.
 macOS updates require a Developer ID-signed and notarized build. Windows x64
 updates use the release's Squirrel `Setup.exe`; those installers remain
 unsigned until a Windows code-signing certificate is configured. See

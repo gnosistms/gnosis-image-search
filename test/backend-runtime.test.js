@@ -49,6 +49,7 @@ test('development backend leaves existing certificate settings unchanged', () =>
     activeModel: {
       modelKind: 'clip',
       checkpoint: 'example/model',
+      modelSource: '/tmp/model-snapshot',
       cacheDirectory: '/tmp/model-cache'
     }
   });
@@ -57,6 +58,7 @@ test('development backend leaves existing certificate settings unchanged', () =>
   assert.equal(environment.REQUESTS_CA_BUNDLE, '/developer/requests.pem');
   assert.equal(environment.SEARCH_MODEL_KIND, 'clip');
   assert.equal(environment.SEARCH_MODEL_NAME, 'example/model');
+  assert.equal(environment.SEARCH_MODEL_SOURCE, '/tmp/model-snapshot');
   assert.equal(environment.SEARCH_MODEL_CACHE_DIR, '/tmp/model-cache');
 });
 

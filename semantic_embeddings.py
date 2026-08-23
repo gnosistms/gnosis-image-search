@@ -17,6 +17,7 @@ from PIL import Image
 
 MODEL_KIND = os.environ.get("SEARCH_MODEL_KIND", "siglip").strip().lower()
 MODEL_NAME = os.environ.get("SEARCH_MODEL_NAME", "google/siglip2-base-patch16-256")
+MODEL_SOURCE = os.environ.get("SEARCH_MODEL_SOURCE") or MODEL_NAME
 MODEL_CACHE_DIR = os.environ.get("SEARCH_MODEL_CACHE_DIR") or None
 MODEL_ALLOW_DOWNLOAD = os.environ.get("SEARCH_MODEL_ALLOW_DOWNLOAD", "0") == "1"
 MODEL_CACHE_KEY = f"{MODEL_KIND}:{MODEL_NAME}"
@@ -91,11 +92,11 @@ def _load_model() -> bool:
             load_options = {"local_files_only": not MODEL_ALLOW_DOWNLOAD}
             if MODEL_CACHE_DIR:
                 load_options["cache_dir"] = MODEL_CACHE_DIR
-            processor = processor_class.from_pretrained(MODEL_NAME, **load_options)
+            processor = processor_class.from_pretrained(MODEL_SOURCE, **load_options)
             device = "mps" if torch.backends.mps.is_available() else "cpu"
             dtype = torch.float16 if device == "mps" else torch.float32
             model = model_class.from_pretrained(
-                MODEL_NAME, dtype=dtype, **load_options,
+                MODEL_SOURCE, dtype=dtype, **load_options,
             ).to(device)
             model.eval()
             _MODEL, _PROCESSOR, _TORCH, _DEVICE = model, processor, torch, device

@@ -8,6 +8,13 @@ const notarizationEnabled = Boolean(
   process.env.APPLE_API_KEY &&
   process.env.APPLE_API_ISSUER
 );
+const distribution = process.env.GNOSIS_DISTRIBUTION || '';
+if (distribution && !['full', 'update'].includes(distribution)) {
+  throw new Error(`Unsupported GNOSIS_DISTRIBUTION: ${distribution}`);
+}
+const packageVersion = require('./package.json').version;
+const targetArch = process.env.GNOSIS_TARGET_ARCH || (process.platform === 'darwin' ? 'arm64' : 'x64');
+const distributionLabel = distribution === 'full' ? 'Full-Installer' : 'Update';
 
 function prepareApplicationsAlias() {
   const output = path.resolve('build/dmg-assets/Applications');
@@ -41,6 +48,7 @@ function isSignableCode(filePath) {
 }
 
 module.exports = {
+  ...(distribution ? { buildIdentifier: distribution } : {}),
   packagerConfig: {
     name: 'Gnosis Images',
     executableName: 'Gnosis Images',
@@ -78,14 +86,18 @@ module.exports = {
       /^\/vendor($|\/)/,
       /^\/web($|\/)/
     ],
-    extraResource: ['build/backend']
+    extraResource: [
+      'build/backend',
+      ...(distribution === 'full' ? ['build/bundled-models'] : [])
+    ]
   },
   makers: [
     {
       name: '@electron-forge/maker-dmg',
       config: {
+        name: `Gnosis-Images-${distributionLabel}-${packageVersion}-${targetArch}`,
         format: 'ULFO',
-        title: 'Gnosis Images Installer',
+        title: distribution === 'full' ? 'Gnosis Images Installer' : 'Gnosis Images Update',
         icon: 'assets/icon.icns',
         background: 'assets/dmg-background.png',
         iconSize: 112,
@@ -115,7 +127,7 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-zip',
-      platforms: ['darwin']
+      platforms: distribution ? [] : ['darwin']
     },
     {
       name: '@electron-forge/maker-squirrel',
@@ -123,7 +135,7 @@ module.exports = {
         name: 'gnosis_images',
         authors: 'Hans',
         description: 'Museum image search ranked by the PAMELA criterion model',
-        setupExe: `Gnosis-Images-${require('./package.json').version}-Setup.exe`,
+        setupExe: `Gnosis-Images-${distributionLabel}-${packageVersion}-${targetArch}.exe`,
         setupIcon: path.resolve('assets/icon.ico')
       }
     }

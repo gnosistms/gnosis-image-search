@@ -46,8 +46,12 @@ test('macOS download starts without navigating the top-level page', async () => 
     fetch: async () => ({
       json: async () => ({
         assets: [{
+          browser_download_url: 'https://example.test/Gnosis-Images-Update.dmg',
+          name: 'Gnosis-Images-Update-1.0.0-arm64.dmg',
+          size: 104857600,
+        }, {
           browser_download_url: 'https://example.test/Gnosis.Images.dmg',
-          name: 'Gnosis.Images.dmg',
+          name: 'Gnosis-Images-Full-Installer-1.0.0-arm64.dmg',
           size: 529224507,
         }],
         html_url: 'https://example.test/releases/v1',
