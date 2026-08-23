@@ -7,8 +7,13 @@ if (-not $PythonBin) {
 }
 if (-not (Test-Path $PythonBin)) {
   py -3.12 -m venv (Join-Path $ProjectDir '.backend-venv')
+  & $PythonBin -m pip install 'torch==2.13.0' --index-url 'https://download.pytorch.org/whl/cpu'
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   & $PythonBin -m pip install --quiet -r (Join-Path $ProjectDir 'requirements-backend.txt')
 }
+
+& $PythonBin -c "import torch; assert torch.version.cuda is None, 'Windows packages require the CPU-only PyTorch wheel'"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & $PythonBin -m PyInstaller --version *> $null
 if ($LASTEXITCODE -ne 0) {

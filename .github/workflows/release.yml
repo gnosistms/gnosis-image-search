@@ -82,7 +82,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m venv .backend-venv
+      - name: Install CPU-only PyTorch
+        run: .\.backend-venv\Scripts\python.exe -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
       - run: .\.backend-venv\Scripts\python.exe -m pip install -r requirements-backend.txt pyinstaller==6.22.2
+      - name: Verify CPU-only PyTorch
+        run: .\.backend-venv\Scripts\python.exe -c "import torch; assert torch.version.cuda is None, torch.version.cuda"
       - run: npm ci
       - name: Test application
         run: |

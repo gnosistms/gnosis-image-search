@@ -3,6 +3,8 @@
 Public macOS direct-download builds require Apple Developer ID signing and
 notarization. A Mac App Store provisioning profile is not required. Windows
 x64 installers are built in parallel and are currently unsigned.
+The Windows backend uses PyTorch's CPU-only wheel so each release asset stays
+below GitHub's per-file size limit.
 
 1. Enroll the release owner in the Apple Developer Program.
 2. In Xcode, open **Settings → Accounts**, add the Apple ID, select the team,
