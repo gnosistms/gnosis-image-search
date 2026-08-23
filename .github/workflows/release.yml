@@ -63,6 +63,13 @@ jobs:
           EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      - name: Verify macOS release asset sizes
+        run: |
+          oversized=$(find out/full/make out/update/make -type f -name '*.dmg' -size +1900M -print -quit)
+          if [ -n "$oversized" ]; then
+            echo "Release asset exceeds the safe GitHub upload limit: $oversized" >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: gnosis-image-search-macos-arm64
@@ -126,6 +133,12 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $name = "Gnosis-Images-Update-$version-x64.zip"
           Move-Item -Force $zip.FullName (Join-Path $zip.DirectoryName $name)
+      - name: Verify Windows release asset sizes
+        run: |
+          $oversized = Get-ChildItem 'out\full\make', 'out\update\make' -Recurse -Filter '*.zip' |
+            Where-Object { $_.Length -gt 1900MB } |
+            Select-Object -First 1
+          if ($oversized) { throw "Release asset exceeds the safe GitHub upload limit: $($oversized.FullName)" }
       - uses: actions/upload-artifact@v4
         with:
           name: gnosis-image-search-windows-x64

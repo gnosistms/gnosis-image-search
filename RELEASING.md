@@ -7,6 +7,7 @@ The Windows backend uses PyTorch's CPU-only wheel so each release asset stays
 below GitHub's per-file size limit.
 Electron Packager ignore rules are tested with absolute paths so research data
 and build-only files cannot leak into desktop packages.
+CI rejects any individual release asset larger than 1.9 GiB before publication.
 
 1. Enroll the release owner in the Apple Developer Program.
 2. In Xcode, open **Settings → Accounts**, add the Apple ID, select the team,
