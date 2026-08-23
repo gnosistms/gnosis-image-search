@@ -67,10 +67,10 @@ for macOS or Windows.
 The application checks the latest public GitHub Release at startup. If a newer
 version exists, it asks for permission before downloading and installing only
 the smaller `Update` asset.
-macOS updates require a Developer ID-signed and notarized build. Windows x64
-full installations use WiX MSI, while updates use the release's smaller
-Squirrel `Setup.exe`; those installers remain unsigned until a Windows
-code-signing certificate is configured. See
+macOS updates require a Developer ID-signed and notarized build. New Windows
+x64 installations use the full ZIP (extract it, then run `Gnosis Images.exe`),
+while updates use the release's smaller Squirrel `Setup.exe`; Windows builds
+remain unsigned until a code-signing certificate is configured. See
 [RELEASING.md](RELEASING.md) for the provisioning and release procedure.
 
 ## Tests

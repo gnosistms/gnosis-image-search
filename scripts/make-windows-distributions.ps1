@@ -13,11 +13,11 @@ $env:GNOSIS_TARGET_ARCH = 'x64'
 $env:GNOSIS_DISTRIBUTION = 'full'
 & npx electron-forge make --platform=win32 --arch=x64
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$FullMsi = Get-ChildItem (Join-Path $ProjectDir 'out\full\make\wix\x64\*.msi') | Select-Object -First 1
-if (-not $FullMsi) { throw 'WiX did not produce the full Windows MSI.' }
+$FullZip = Get-ChildItem (Join-Path $ProjectDir 'out\full\make\zip\win32\x64\*.zip') | Select-Object -First 1
+if (-not $FullZip) { throw 'Forge did not produce the full Windows ZIP.' }
 $Version = (Get-Content (Join-Path $ProjectDir 'package.json') | ConvertFrom-Json).version
-$FullMsiName = "Gnosis-Images-Full-Installer-$Version-x64.msi"
-Move-Item -Force $FullMsi.FullName (Join-Path $FullMsi.DirectoryName $FullMsiName)
+$FullZipName = "Gnosis-Images-Full-Installer-$Version-x64.zip"
+Move-Item -Force $FullZip.FullName (Join-Path $FullZip.DirectoryName $FullZipName)
 $env:GNOSIS_DISTRIBUTION = 'update'
 & npx electron-forge make --platform=win32 --arch=x64
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

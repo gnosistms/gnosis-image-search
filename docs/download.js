@@ -10,7 +10,7 @@ let resetTimer = null;
 function platform() {
   const value = `${navigator.userAgentData?.platform || ''} ${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase();
   if (value.includes('mac')) return { name: 'macOS', extensions: ['.dmg', 'darwin-arm64.zip', '.zip'] };
-  if (value.includes('win')) return { name: 'Windows', extensions: ['.exe', '.msi'] };
+  if (value.includes('win')) return { name: 'Windows', extensions: ['.zip', '.exe'] };
   if (value.includes('linux')) return { name: 'Linux', extensions: ['.appimage', '.deb', '.rpm'] };
   return { name: 'your operating system', extensions: [] };
 }

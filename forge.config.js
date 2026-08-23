@@ -127,7 +127,7 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-zip',
-      platforms: distribution ? [] : ['darwin']
+      platforms: distribution === 'full' ? ['win32'] : distribution ? [] : ['darwin']
     },
     {
       name: '@electron-forge/maker-squirrel',
@@ -138,17 +138,6 @@ module.exports = {
         description: 'Museum image search ranked by the PAMELA criterion model',
         setupExe: `Gnosis-Images-${distributionLabel}-${packageVersion}-${targetArch}.exe`,
         setupIcon: path.resolve('assets/icon.ico')
-      }
-    },
-    {
-      name: '@electron-forge/maker-wix',
-      platforms: distribution === 'full' ? ['win32'] : [],
-      config: {
-        language: 1033,
-        manufacturer: 'Hans',
-        icon: path.resolve('assets/icon.ico'),
-        programFilesFolderName: 'Gnosis Images',
-        shortcutFolderName: 'Gnosis Images'
       }
     }
   ],
