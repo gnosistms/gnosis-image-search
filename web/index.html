@@ -10,6 +10,7 @@
 </head>
 <body>
   <header class="topbar">
+    <div class="topbar-drag-handle" aria-hidden="true"></div>
     <form id="search-form" class="search-form">
       <label class="sr-only" for="query">Search images</label>
       <input id="query" type="search" maxlength="240" placeholder="Search images" autocomplete="off">
@@ -33,6 +34,11 @@
 
   <main id="content">
     <section id="empty-state" class="empty-state">
+      <div class="window-resize-edge window-resize-edge-top" aria-hidden="true"></div>
+      <div class="window-resize-edge window-resize-edge-right" aria-hidden="true"></div>
+      <div class="window-resize-edge window-resize-edge-bottom" aria-hidden="true"></div>
+      <div class="window-resize-edge window-resize-edge-left" aria-hidden="true"></div>
+      <div id="source-panel-drag-exclusion" class="source-panel-drag-exclusion" aria-hidden="true" hidden></div>
       <div class="hero-copy">
         <div class="hero-brand">
           <img src="/gnosis-caduceus.svg" alt="">

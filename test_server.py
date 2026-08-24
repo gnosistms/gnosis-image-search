@@ -408,6 +408,24 @@ class SessionTests(unittest.TestCase):
 
 
 class BatchTests(unittest.TestCase):
+    def test_met_does_not_fall_back_when_title_search_is_empty(self):
+        calls = []
+        original_get_json = sources._get_json
+
+        def fake_get_json(url, source, **kwargs):
+            calls.append((url, source))
+            return {"total": 0, "objectIDs": None}
+
+        sources._get_json = fake_get_json
+        try:
+            self.assertEqual(sources.met("kundalini", 10), [])
+        finally:
+            sources._get_json = original_get_json
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], "met")
+        self.assertIn("title=true", calls[0][0])
+
     def test_new_collections_are_registered_and_selected(self):
         self.assertEqual(server.SOURCE_LABELS["getty"], "J. Paul Getty Museum")
         self.assertEqual(server.SOURCE_LABELS["loc"], "Library of Congress")
@@ -664,6 +682,7 @@ class BatchTests(unittest.TestCase):
                 "width": 3000, "height": 2000,
                 "extmetadata": {
                     "Artist": {"value": "<b>Example Artist</b>"},
+                    "ImageDescription": {"value": "Saint Peter in prison"},
                     "LicenseShortName": {"value": "CC BY-SA 4.0"},
                 },
             }]},
@@ -685,6 +704,46 @@ class BatchTests(unittest.TestCase):
         self.assertIn("haswbstatement:P180", query)
         self.assertEqual([item["source_id"] for item in items], ["File:Museum work.jpg"])
         self.assertEqual(items[0]["artist"], "Example Artist")
+
+    def test_commons_metadata_filter_is_typo_tolerant_but_rejects_weak_matches(self):
+        self.assertTrue(additional_sources.commons_metadata_is_relevant(
+            "peter escapes from prisoin",
+            "The Liberation of Saint Peter. An angel visits Peter in prison.",
+        ))
+        self.assertFalse(additional_sources.commons_metadata_is_relevant(
+            "peter escapes from prisoin",
+            "Portrait of Saint Peter holding keys",
+        ))
+        self.assertTrue(additional_sources.commons_metadata_is_relevant(
+            "kundalini", "TaTvA Kundalini performing live",
+        ))
+        self.assertFalse(additional_sources.commons_metadata_is_relevant(
+            "kundalini", "Camp Chesterfield general account ledger",
+        ))
+
+    def test_commons_parser_filters_irrelevant_metadata_before_limit(self):
+        payload = {"query": {"pages": {
+            "1": {"title": "File:Generic painting.jpg", "imageinfo": [{
+                "mime": "image/jpeg", "url": "https://commons.test/generic.jpg",
+                "extmetadata": {
+                    "ImageDescription": {"value": "A generic landscape"},
+                    "LicenseShortName": {"value": "Public domain"},
+                },
+            }]},
+            "2": {"title": "File:Kundalini symbol.jpg", "imageinfo": [{
+                "mime": "image/jpeg", "url": "https://commons.test/kundalini.jpg",
+                "extmetadata": {
+                    "ImageDescription": {"value": "Diagram of Kundalini energy"},
+                    "LicenseShortName": {"value": "Public domain"},
+                },
+            }]},
+        }}}
+        items = additional_sources.parse_museum_commons_response(
+            payload, 10, "kundalini"
+        )
+        self.assertEqual(
+            [item["source_id"] for item in items], ["File:Kundalini symbol.jpg"]
+        )
 
     def test_universal_comasonry_parses_gallery_index_and_images(self):
         index = """

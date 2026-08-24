@@ -22,8 +22,9 @@ input[type="search"]::-webkit-search-cancel-button { display: none; -webkit-appe
 
 .topbar { position: sticky; z-index: 30; top: 0; height: var(--topbar); display: none; align-items: center; gap: 11px; padding: 8px 18px; background: rgba(253,252,249,.97); border-bottom: 0; backdrop-filter: blur(18px) saturate(1.12); }
 body.search-active .topbar { display: flex; }
-body.desktop-app .topbar { padding-left: 86px; -webkit-app-region: drag; }
+body.desktop-app .topbar { padding-left: 86px; -webkit-app-region: no-drag; }
 body.desktop-app .topbar button, body.desktop-app .topbar input, body.desktop-app .topbar a { -webkit-app-region: no-drag; }
+body.desktop-app .topbar-drag-handle { position: absolute; top: 8px; bottom: 8px; left: 70px; width: 14px; -webkit-app-region: drag; }
 .search-form { display: flex; flex: 1; height: 43px; overflow: hidden; background: var(--soft); border: 1px solid #e1dcd4; border-radius: 14px; transition: background .15s, border-color .15s; }
 .search-form:focus-within { background: #fff; border-color: #d1c9c0; }
 .search-form input { min-width: 0; flex: 1; padding: 0 8px 0 20px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 16px; }
@@ -53,9 +54,17 @@ body.search-active .search-status { display: flex; }
 #content { padding: 0; transition: margin-right .18s ease; }
 body.search-active #content { padding: 4px; }
 body.panel-open #content { margin-right: var(--panel-width); }
-.empty-state { min-height: 100vh; display: grid; grid-template-columns: 48% 52%; overflow: hidden; color: var(--ink); background: #f3ede4; }
+.empty-state { position: relative; min-height: 100vh; display: grid; grid-template-columns: 48% 52%; overflow: hidden; color: var(--ink); background: #f3ede4; }
 body.desktop-app .empty-state { -webkit-app-region: drag; }
 body.desktop-app .empty-state button, body.desktop-app .empty-state input, body.desktop-app .empty-state a { -webkit-app-region: no-drag; }
+body.desktop-app .hero-search-form, body.desktop-app .hero-filter-button, body.desktop-app .source-panel { -webkit-app-region: no-drag; }
+body.desktop-app .hero-brand, body.desktop-app .hero-copy h1, body.desktop-app .hero-copy > p, body.desktop-app .hero-art { -webkit-app-region: no-drag; }
+body.desktop-app .source-panel-drag-exclusion { position: fixed; z-index: 39; -webkit-app-region: no-drag; }
+body.desktop-app .window-resize-edge { position: fixed; z-index: 100; -webkit-app-region: no-drag; }
+body.desktop-app .window-resize-edge-top { top: 0; right: 0; left: 0; height: 6px; }
+body.desktop-app .window-resize-edge-right { top: 0; right: 0; bottom: 0; width: 6px; }
+body.desktop-app .window-resize-edge-bottom { right: 0; bottom: 0; left: 0; height: 6px; }
+body.desktop-app .window-resize-edge-left { top: 0; bottom: 0; left: 0; width: 6px; }
 .hero-copy { position: relative; z-index: 2; display: flex; flex-direction: column; justify-content: center; padding: 88px 8% 62px 10%; }
 .hero-brand { display: flex; align-items: center; color: var(--accent); font-size: 12px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase; }
 .hero-brand img { display: block; width: 40px; height: 30px; margin-right: 10px; object-fit: contain; }

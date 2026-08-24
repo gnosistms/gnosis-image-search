@@ -18,6 +18,9 @@ fi
 if ! PYTHONPATH="$PYINSTALLER_DIR" "$PYTHON_BIN" -c 'import cryptography' >/dev/null 2>&1; then
   "$PYTHON_BIN" -m pip install --quiet --target "$PYINSTALLER_DIR" 'cryptography==46.0.5'
 fi
+if ! "$PYTHON_BIN" -c 'import rapidfuzz' >/dev/null 2>&1; then
+  "$PYTHON_BIN" -m pip install --quiet 'rapidfuzz==3.14.5'
+fi
 rm -rf "$OUTPUT_DIR" "$PROJECT_DIR/build/pyinstaller" "$PROJECT_DIR/build/gnosis-search-engine.spec"
 mkdir -p "$OUTPUT_DIR"
 

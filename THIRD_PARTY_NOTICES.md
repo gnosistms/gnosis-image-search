@@ -1,5 +1,10 @@
 # Third-party notices
 
+## RapidFuzz
+
+Commons metadata matching uses [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz),
+licensed under the MIT License.
+
 ## Lucide External Link and Link 2 icons
 
 The `external-link` and `link-2` icons used in the image preview are from

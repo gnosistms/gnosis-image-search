@@ -8,6 +8,7 @@ const gallery = document.querySelector('#gallery');
 const emptyState = document.querySelector('#empty-state');
 const statusLine = document.querySelector('#search-status');
 const sourcePanel = document.querySelector('#source-panel');
+const sourcePanelDragExclusion = document.querySelector('#source-panel-drag-exclusion');
 const sourceOptions = document.querySelector('#source-options');
 const toggleSources = document.querySelector('#toggle-sources');
 const heroToggleSources = document.querySelector('#hero-toggle-sources');
@@ -108,8 +109,21 @@ function setupSearchControl(formElement, input, button) {
   updateSearchControl(input, button);
 }
 
+function syncSourcePanelDragExclusion() {
+  if (sourcePanel.hidden || emptyState.hidden) return;
+  const rect = sourcePanel.getBoundingClientRect();
+  Object.assign(sourcePanelDragExclusion.style, {
+    top: `${rect.top}px`,
+    left: `${rect.left}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+  });
+}
+
 function setSourcePanelOpen(open) {
   sourcePanel.hidden = !open;
+  sourcePanelDragExclusion.hidden = !open;
+  if (open) syncSourcePanelDragExclusion();
   toggleSources.setAttribute('aria-expanded', String(open));
   heroToggleSources.setAttribute('aria-expanded', String(open));
 }
@@ -753,6 +767,7 @@ document.querySelector('#select-none').addEventListener('click', () => {
   updateSourceCount();
 });
 sourceOptions.addEventListener('change', updateSourceCount);
+window.addEventListener('resize', syncSourcePanelDragExclusion);
 closeDeveloperWarning.addEventListener('click', () => developerWarning.close());
 document.querySelector('#close-panel').addEventListener('click', closeDetails);
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDetails(); });

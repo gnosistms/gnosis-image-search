@@ -15,10 +15,17 @@ import sqlite3
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
+
+try:
+    from rapidfuzz import fuzz
+except ImportError:  # pragma: no cover - packaged builds include RapidFuzz
+    fuzz = None
+    import difflib
 
 
 NGA_ARCHIVE_URL = (
@@ -31,6 +38,15 @@ NGA_IMAGES_SUFFIX = "/data/published_images.csv"
 _LOC_IMAGE_SIZE = re.compile(r"#h=(\d+)&w=(\d+)$")
 _RASTER_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
 _HTML_TAG = re.compile(r"<[^>]+>")
+_COMMONS_SEARCH_STOPWORDS = frozenset((
+    "a", "an", "and", "at", "by", "for", "from", "in", "into", "of",
+    "on", "the", "to", "with", "image", "images", "photo", "photograph",
+    "picture", "art", "artwork", "painting", "object", "work",
+))
+_COMMONS_METADATA_FIELDS = (
+    "ObjectName", "ImageDescription", "Description", "Categories",
+    "DepictedPeople", "DepictedPlace", "Credit", "Artist",
+)
 GETTY_SEARCH_URL = "https://www.getty.edu/art/collection/api/search"
 GETTY_COLLECTION_URL = "https://www.getty.edu/art/collection"
 GETTY_IIIF_IMAGE_URL = "https://media.getty.edu/iiif/image"
@@ -416,6 +432,72 @@ def _metadata_value(metadata: dict, name: str) -> str:
     return html.unescape(_HTML_TAG.sub("", value)).strip()
 
 
+def _commons_search_tokens(value: object) -> list[str]:
+    folded = unicodedata.normalize("NFKD", str(value or ""))
+    folded = "".join(char for char in folded if not unicodedata.combining(char))
+    return [
+        token for token in re.findall(r"[a-z0-9]+", folded.casefold())
+        if len(token) > 1 and token not in _COMMONS_SEARCH_STOPWORDS
+    ]
+
+
+def _commons_stem(token: str) -> str:
+    """Fold common English inflections without a language-model dependency."""
+    if len(token) > 5 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 5 and token.endswith("ing"):
+        base = token[:-3]
+        return base[:-1] if len(base) > 2 and base[-1:] == base[-2:-1] else base
+    if len(token) > 4 and token.endswith("ed"):
+        base = token[:-2]
+        return base[:-1] if len(base) > 2 and base[-1:] == base[-2:-1] else base
+    if len(token) > 4 and token.endswith("es"):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _commons_word_matches(query_word: str, metadata_word: str) -> bool:
+    if query_word == metadata_word:
+        return True
+    if _commons_stem(query_word) == _commons_stem(metadata_word):
+        return True
+    # Match Elasticsearch AUTO-style typo tolerance: no edits for very short
+    # words, roughly one for ordinary words, and two only for longer words.
+    cutoff = 84 if max(len(query_word), len(metadata_word)) >= 7 else 86
+    if min(len(query_word), len(metadata_word)) < 4:
+        return False
+    if fuzz is not None:
+        return fuzz.ratio(query_word, metadata_word) >= cutoff
+    return difflib.SequenceMatcher(None, query_word, metadata_word).ratio() >= cutoff / 100
+
+
+def commons_metadata_is_relevant(query: str, metadata_text: str) -> bool:
+    """Require conservative fuzzy query coverage in Commons metadata."""
+    query_words = list(dict.fromkeys(_commons_search_tokens(query)))
+    metadata_words = list(dict.fromkeys(_commons_search_tokens(metadata_text)))
+    if not query_words or not metadata_words:
+        return False
+    matched = sum(
+        any(_commons_word_matches(query_word, word) for word in metadata_words)
+        for query_word in query_words
+    )
+    # A single subject/name must occur. Longer natural-language searches may
+    # omit function words and tolerate one unmatched concept, but a lone match
+    # such as "Peter" is insufficient for "Peter escapes from prison".
+    required = 1 if len(query_words) <= 2 else max(2, (len(query_words) + 1) // 2)
+    return matched >= required
+
+
+def _commons_metadata_text(page: dict, info: dict) -> str:
+    metadata = info.get("extmetadata") or {}
+    return " ".join(filter(None, (
+        str(page.get("title") or "").removeprefix("File:").replace("_", " "),
+        *(_metadata_value(metadata, name) for name in _COMMONS_METADATA_FIELDS),
+    )))
+
+
 def _reusable_commons_license(value: str) -> bool:
     folded = str(value or "").lower().replace("-", " ")
     return any(mark in folded for mark in (
@@ -423,7 +505,9 @@ def _reusable_commons_license(value: str) -> bool:
     ))
 
 
-def parse_museum_commons_response(data: dict, need: int) -> list[dict]:
+def parse_museum_commons_response(
+    data: dict, need: int, query: str | None = None
+) -> list[dict]:
     """Parse Commons files already constrained to collection + depicts claims."""
     out = []
     pages = ((data or {}).get("query") or {}).get("pages") or {}
@@ -433,6 +517,9 @@ def parse_museum_commons_response(data: dict, need: int) -> list[dict]:
             if info.get("mime") not in ("image/jpeg", "image/png", "image/webp"):
                 continue
             metadata = info.get("extmetadata") or {}
+            metadata_text = _commons_metadata_text(page, info)
+            if query is not None and not commons_metadata_is_relevant(query, metadata_text):
+                continue
             license_name = _metadata_value(metadata, "LicenseShortName")
             if not _reusable_commons_license(license_name):
                 continue
@@ -447,6 +534,10 @@ def parse_museum_commons_response(data: dict, need: int) -> list[dict]:
                 "date": _metadata_value(metadata, "DateTimeOriginal"),
                 "medium": _metadata_value(metadata, "ObjectName")
                     or _metadata_value(metadata, "Credit")[:160],
+                "description": (
+                    _metadata_value(metadata, "ImageDescription")
+                    or _metadata_value(metadata, "Description")
+                )[:500],
                 "license": license_name,
                 "page_url": _clean_url(info.get("descriptionurl") or ""),
                 "image_url": image_url,
@@ -475,7 +566,7 @@ def museum_commons(query: str, need: int, cue=None) -> list[dict]:
         "iiurlwidth": "1024", "format": "json",
     })
     return parse_museum_commons_response(
-        sources._get_json(url, "commons_museum") or {}, need
+        sources._get_json(url, "commons_museum") or {}, need, query
     )
 
 

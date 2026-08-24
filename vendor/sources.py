@@ -126,10 +126,6 @@ def met(query, need, cue=None):
     d = _get_json(f"https://collectionapi.metmuseum.org/public/collection/v1/search"
                   f"?q={_q(query)}&hasImages=true&title=true", "met")
     ids = ((d or {}).get("objectIDs") or [])
-    if not ids:  # fall back to loose full-field search
-        d = _get_json(f"https://collectionapi.metmuseum.org/public/collection/v1/search"
-                      f"?q={_q(query)}&hasImages=true", "met")
-        ids = ((d or {}).get("objectIDs") or [])
     ids = ids[:need * 4]
     out = []
     for oid in ids:
