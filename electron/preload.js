@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('gnosisGoogle', {
 contextBridge.exposeInMainWorld('gnosisDesktop', {
   downloadFullSize: options => ipcRenderer.invoke('image:download-full-size', options),
   copyFullSizeImageUrl: options => ipcRenderer.invoke('image:copy-full-size-url', options),
+  setTitleBarTheme: theme => ipcRenderer.send('window:title-bar-theme', theme),
 });

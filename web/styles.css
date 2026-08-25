@@ -22,9 +22,11 @@ input[type="search"]::-webkit-search-cancel-button { display: none; -webkit-appe
 
 .topbar { position: sticky; z-index: 30; top: 0; height: var(--topbar); display: none; align-items: center; gap: 11px; padding: 8px 18px; background: rgba(253,252,249,.97); border-bottom: 0; backdrop-filter: blur(18px) saturate(1.12); }
 body.search-active .topbar { display: flex; }
-body.desktop-app .topbar { padding-left: 86px; -webkit-app-region: no-drag; }
+body.desktop-app .topbar { padding-left: 86px; -webkit-app-region: drag; }
 body.desktop-app .topbar button, body.desktop-app .topbar input, body.desktop-app .topbar a { -webkit-app-region: no-drag; }
 body.desktop-app .topbar-drag-handle { position: absolute; top: 8px; bottom: 8px; left: 70px; width: 14px; -webkit-app-region: drag; }
+body.desktop-win32 .topbar { padding-right: calc(18px + env(titlebar-area-width, 138px)); padding-left: 18px; }
+body.desktop-win32 .topbar-drag-handle { top: 0; right: calc(env(titlebar-area-width, 138px) + 18px); bottom: auto; left: 0; width: auto; height: 8px; }
 .search-form { display: flex; flex: 1; height: 43px; overflow: hidden; background: var(--soft); border: 1px solid #e1dcd4; border-radius: 14px; transition: background .15s, border-color .15s; }
 .search-form:focus-within { background: #fff; border-color: #d1c9c0; }
 .search-form input { min-width: 0; flex: 1; padding: 0 8px 0 20px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 16px; }

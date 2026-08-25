@@ -10,6 +10,7 @@ const { backendEnvironment, packagedBackendExecutable } = require('./backend-run
 const { reconcileModelConfiguration } = require('./model-config');
 const { installModelPackage, installedModel } = require('./model-package');
 const { compatibleModelAsset, compatibleUpdateAsset } = require('./update-assets');
+const { cleanupStaleUpdateDownloads, updateDownloadDirectory } = require('./update-downloads');
 
 const APP_NAME = 'Gnosis Images';
 const APP_DATA_NAME = 'Gnosis Image Search';
@@ -435,6 +436,16 @@ async function collectGoogleStage(_event, options = {}) {
 
 ipcMain.handle('google-images:search-stage', collectGoogleStage);
 
+ipcMain.on('window:title-bar-theme', (event, theme) => {
+  if (process.platform !== 'win32' || !mainWindow || event.sender !== mainWindow.webContents) return;
+  const searchActive = theme === 'search';
+  mainWindow.setTitleBarOverlay({
+    color: searchActive ? '#fdfcf9' : '#4c2835',
+    symbolColor: searchActive ? '#1d1c1a' : '#ffffff',
+    height: 36,
+  });
+});
+
 function downloadImage(sender, url, filename, title) {
   const downloadSession = sender.session;
   return new Promise((resolve, reject) => {
@@ -828,7 +839,7 @@ async function askToInstallUpdate(update) {
 
 async function startUpdateDownload(release, asset) {
   const version = release.tag_name.replace(/^v/, '');
-  const updateDirectory = path.join(app.getPath('temp'), 'gnosis-images-updates');
+  const updateDirectory = updateDownloadDirectory(app.getPath('temp'));
   await fs.promises.mkdir(updateDirectory, { recursive: true });
   const finalPath = path.join(updateDirectory, path.basename(asset.name));
   const partialPath = `${finalPath}.download`;
@@ -1028,7 +1039,10 @@ async function createApplication() {
     minHeight: 650,
     show: false,
     backgroundColor: '#11110f',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : process.platform === 'win32' ? 'hidden' : 'default',
+    ...(process.platform === 'win32' ? {
+      titleBarOverlay: { color: '#4c2835', symbolColor: '#ffffff', height: 36 },
+    } : {}),
     trafficLightPosition: { x: 18, y: 19 },
     webPreferences: {
       nodeIntegration: false,
@@ -1042,7 +1056,7 @@ async function createApplication() {
     return { action: 'deny' };
   });
   mainWindow.once('ready-to-show', () => mainWindow.show());
-  await mainWindow.loadURL(`http://127.0.0.1:${port}/?desktop=1`);
+  await mainWindow.loadURL(`http://127.0.0.1:${port}/?desktop=1&platform=${process.platform}`);
   const googleBridgeReady = await mainWindow.webContents.executeJavaScript(
     "typeof window.gnosisGoogle?.searchStage === 'function'",
     true,
@@ -1062,7 +1076,20 @@ else {
       mainWindow.focus();
     }
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    try {
+      await cleanupStaleUpdateDownloads(app.getPath('temp'));
+    } catch (error) {
+      // The installer can briefly remain locked while it starts the updated
+      // app. Retry after it has had time to exit, and try again next launch if
+      // Windows still has the file open.
+      console.warn(`Could not remove stale update downloads: ${error.message}`);
+      setTimeout(() => {
+        cleanupStaleUpdateDownloads(app.getPath('temp')).catch(retryError => {
+          console.warn(`Could not remove stale update downloads after retry: ${retryError.message}`);
+        });
+      }, 30_000).unref();
+    }
     if (process.platform === 'darwin') app.dock.setIcon(APP_ICON_PATH);
     installApplicationMenu();
     return createApplication();

@@ -36,8 +36,11 @@ const alternateStatus = document.querySelector('#alternate-status');
 const developerWarning = document.querySelector('#developer-warning');
 const closeDeveloperWarning = document.querySelector('#close-developer-warning');
 
-if (new URLSearchParams(location.search).has('desktop')) {
+const launchParameters = new URLSearchParams(location.search);
+if (launchParameters.has('desktop')) {
   document.body.classList.add('desktop-app');
+  const desktopPlatform = launchParameters.get('platform');
+  if (desktopPlatform) document.body.classList.add(`desktop-${desktopPlatform}`);
 }
 
 let sourceConfig = [];
@@ -506,6 +509,7 @@ async function runSearch(query) {
   updateSearchControl(queryInput, searchButton);
   updateSearchControl(heroQueryInput, heroSearchButton);
   document.body.classList.add('search-active');
+  window.gnosisDesktop?.setTitleBarTheme?.('search');
   setSourcePanelOpen(false);
   const sequence = ++currentSearchSequence;
   cancelPreviousSearch();

@@ -15,8 +15,9 @@ test('Electron keeps controls and resize edges out of the hero drag region', () 
   assert.match(script, /sourcePanelDragExclusion\.hidden = !open/);
   assert.match(styles, /body\.desktop-app \.empty-state \{ -webkit-app-region: drag; \}/);
   assert.match(styles, /body\.desktop-app \.source-panel-drag-exclusion .*z-index: 39; -webkit-app-region: no-drag;/);
-  assert.match(styles, /body\.desktop-app \.topbar \{ padding-left: 86px; -webkit-app-region: no-drag; \}/);
+  assert.match(styles, /body\.desktop-app \.topbar \{ padding-left: 86px; -webkit-app-region: drag; \}/);
   assert.match(styles, /body\.desktop-app \.topbar-drag-handle .*left: 70px; width: 14px;.*-webkit-app-region: drag;/);
+  assert.match(styles, /body\.desktop-win32 \.topbar \{ padding-right: calc\(18px \+ env\(titlebar-area-width, 138px\)\); padding-left: 18px; \}/);
   assert.match(styles, /body\.desktop-app \.window-resize-edge-top .*height: 6px;/);
   assert.match(
     styles,
