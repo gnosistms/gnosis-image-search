@@ -141,55 +141,41 @@ jobs:
         env:
           BACKEND_PYTHON: ${{ github.workspace }}\.backend-venv\Scripts\python.exe
           EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
-      - name: Package full Windows installer
+      - name: Package Windows application
         run: |
           $env:GNOSIS_TARGET_ARCH = 'x64'
           $env:GNOSIS_DISTRIBUTION = 'full'
-          npx electron-forge make --platform=win32 --arch=x64
+          npx electron-forge package --platform=win32 --arch=x64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          $installer = Get-ChildItem 'out\full\make\squirrel.windows\x64\*.exe' | Select-Object -First 1
-          if (-not $installer) { throw 'Forge did not produce the full Windows Setup.exe installer.' }
-          $expectedName = "Gnosis-Images-Full-Installer-$version-x64.exe"
-          if ($installer.Name -ne $expectedName) { throw "Unexpected Windows installer name: $($installer.Name)" }
-      - name: Package Windows update
+      - name: Build guided NSIS installer
         run: |
-          $env:GNOSIS_TARGET_ARCH = 'x64'
-          $env:GNOSIS_DISTRIBUTION = 'update'
-          npx electron-forge make --platform=win32 --arch=x64
+          $packagedApp = Join-Path $PWD 'out\full\Gnosis Images-win32-x64'
+          npx electron-builder --win nsis --x64 --prepackaged $packagedApp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $zip = Get-ChildItem 'out\update\make\zip\win32\x64\*.zip' | Select-Object -First 1
-          if (-not $zip) { throw 'Forge did not produce the Windows update ZIP.' }
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          $name = "Gnosis-Images-Update-$version-x64.zip"
-          Move-Item -Force $zip.FullName (Join-Path $zip.DirectoryName $name)
-      - name: Verify both Windows packages are model-free
+          $expectedName = "Gnosis-Images-Installer-$version-x64.exe"
+          $installer = Join-Path $PWD "out\full\make\$expectedName"
+          if (-not (Test-Path $installer)) { throw "electron-builder did not produce $expectedName." }
+      - name: Verify Windows package is model-free
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $fullExe = Get-ChildItem 'out\full' -Recurse -Filter 'Gnosis Images.exe' |
+          $appExe = Get-ChildItem 'out\full' -Recurse -Filter 'Gnosis Images.exe' |
             Where-Object { $_.FullName -notmatch '\\make\\' } |
             Select-Object -First 1
-          $updateExe = Get-ChildItem 'out\update' -Recurse -Filter 'Gnosis Images.exe' |
-            Where-Object { $_.FullName -notmatch '\\make\\' } |
-            Select-Object -First 1
-          if (-not $fullExe -or -not $updateExe) { throw 'Could not find both packaged Windows executables.' }
-          foreach ($exe in $fullExe, $updateExe) {
-            $bundledModels = Join-Path $exe.Directory.FullName 'resources\bundled-models'
-            if (Test-Path $bundledModels) { throw "Windows package contains bundled model files: $bundledModels" }
-          }
+          if (-not $appExe) { throw 'Could not find the packaged Windows executable.' }
+          $bundledModels = Join-Path $appExe.Directory.FullName 'resources\bundled-models'
+          if (Test-Path $bundledModels) { throw "Windows package contains bundled model files: $bundledModels" }
       - name: Verify Windows release asset sizes
         run: |
-          $oversized = Get-ChildItem 'out\full\make', 'out\update\make' -Recurse -Include '*.exe', '*.zip' |
+          $oversized = Get-ChildItem 'out\full\make' -Recurse -Include '*.exe' |
             Where-Object { $_.Length -gt 1900MB } |
             Select-Object -First 1
           if ($oversized) { throw "Release asset exceeds the safe GitHub upload limit: $($oversized.FullName)" }
       - uses: actions/upload-artifact@v4
         with:
           name: gnosis-image-search-windows-x64
-          path: |
-            out/full/make/**/*
-            out/update/make/**/*
+          path: out/full/make/**/*
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -209,7 +195,7 @@ jobs:
           files: |
             release-assets/*.gnosis-model
             release-assets/update/make/**/*.dmg
-            release-assets/update/make/**/*.zip
+            release-assets/*.exe
           draft: false
           generate_release_notes: true
       - name: Add full installers for new installations
@@ -217,5 +203,4 @@ jobs:
         with:
           files: |
             release-assets/full/make/**/*.dmg
-            release-assets/full/make/**/*.exe
             release-assets/full/make/**/*.zip

@@ -87,7 +87,7 @@ test('macOS download starts without navigating the top-level page', async () => 
   assert.equal(button.attributes['aria-busy'], undefined);
 });
 
-test('Windows download selects Setup.exe instead of an update ZIP', async () => {
+test('Windows download selects the single NSIS installer instead of an obsolete update ZIP', async () => {
   const button = element();
   const note = element();
   const elements = {
@@ -109,7 +109,7 @@ test('Windows download selects Setup.exe instead of an update ZIP', async () => 
           size: 100,
         }, {
           browser_download_url: 'https://example.test/Gnosis-Images-Setup.exe',
-          name: 'Gnosis-Images-Full-Installer-1.0.0-x64.exe',
+          name: 'Gnosis-Images-Installer-1.0.0-x64.exe',
           size: 209715200,
         }],
         html_url: 'https://example.test/releases/v1',

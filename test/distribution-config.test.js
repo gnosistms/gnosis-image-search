@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 const configPath = require.resolve('../forge.config');
@@ -27,9 +29,7 @@ test('full distribution is model-free and uses a separate output tree', () => {
   assert.match(dmg.config.name, /Gnosis-Images-Full-Installer-.*-arm64/);
   const zip = config.makers.find(maker => maker.name === '@electron-forge/maker-zip');
   assert.deepEqual(zip.platforms, ['darwin']);
-  const squirrel = config.makers.find(maker => maker.name === '@electron-forge/maker-squirrel');
-  assert.deepEqual(squirrel.platforms, ['win32']);
-  assert.match(squirrel.config.setupExe, /Gnosis-Images-Full-Installer-.*-arm64\.exe/);
+  assert.equal(config.makers.some(maker => maker.name === '@electron-forge/maker-squirrel'), false);
 });
 
 test('update distribution is also model-free', () => {
@@ -38,7 +38,7 @@ test('update distribution is also model-free', () => {
   assert.deepEqual(config.packagerConfig.extraResource, ['build/backend/b']);
   assert.equal(config.packagerConfig.extraResource.includes('build/bundled-models'), false);
   const zip = config.makers.find(maker => maker.name === '@electron-forge/maker-zip');
-  assert.deepEqual(zip.platforms, ['win32']);
+  assert.deepEqual(zip.platforms, ['darwin']);
   assert.equal(config.makers.some(maker => maker.name === '@electron-forge/maker-squirrel'), false);
 });
 
@@ -51,4 +51,15 @@ test('packager excludes development data using absolute paths', () => {
   assert.equal(ignored('/workspace/gnosis/out/full/Gnosis Images.app'), true);
   assert.equal(ignored('C:\\workspace\\gnosis\\out\\full\\Gnosis Images.exe'), true);
   assert.equal(ignored('/workspace/gnosis/electron/main.js'), false);
+});
+
+test('Windows NSIS installer uses a guided finish page and one shared artifact', () => {
+  const builderConfig = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.yml'), 'utf8');
+  const finishPage = fs.readFileSync(path.join(__dirname, '..', 'installer', 'nsis-finish.nsh'), 'utf8');
+  assert.match(builderConfig, /oneClick: false/);
+  assert.match(builderConfig, /artifactName: Gnosis-Images-Installer-/);
+  assert.match(builderConfig, /createDesktopShortcut: false/);
+  assert.match(finishPage, /Gnosis Images has been installed/);
+  assert.match(finishPage, /Create a desktop shortcut/);
+  assert.match(finishPage, /Run Gnosis Images/);
 });

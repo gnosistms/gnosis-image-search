@@ -55,22 +55,22 @@ decryption key in separate files inside the packaged backend. This keeps the
 key out of source control, request URLs, logs, and casual inspection; it is
 application obfuscation rather than a secure secret store.
 
-Release builds are written under `out/full/` and `out/update/`.
+Release builds are written under `out/full/` and `out/update/`. Windows uses a
+single NSIS installer for both new installations and application updates.
 
 ## Distribution
 
 The static download site is in `docs/` and is deployed through GitHub Pages. It
-queries the latest GitHub Release and selects only the `Full-Installer` asset
-for macOS or Windows.
+queries the latest GitHub Release and selects the platform's installer asset.
 
 The application checks the latest public GitHub Release at startup. If a newer
-version exists, it asks for permission before downloading and installing only
-the smaller `Update` asset.
+version exists, it asks for permission before downloading the compatible
+installer. The model and embedding cache remain separate and are preserved.
 macOS updates require a Developer ID-signed and notarized build. New Windows
-x64 installations use the per-user `Setup.exe` installer, which does not require
-administrator access. Windows updates download a smaller model-free ZIP and
-reveal it in File Explorer for manual replacement; Windows builds remain
-unsigned until a code-signing certificate is configured. See
+x64 installations use a guided NSIS `.exe` installer with visible progress, an
+optional desktop shortcut, and a completion page. The same installer is used
+for updates; Windows builds remain unsigned until a code-signing certificate is
+configured. See
 [RELEASING.md](RELEASING.md) for the provisioning and release procedure.
 
 ## Tests

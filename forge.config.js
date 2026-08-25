@@ -87,8 +87,8 @@ module.exports = {
       /[\\/]vendor(?:[\\/]|$)/,
       /[\\/]web(?:[\\/]|$)/
     ],
-    // Keep the packaged resource prefix short because Squirrel/NuGet still
-    // applies Windows' legacy MAX_PATH limit to deeply nested PyTorch files.
+    // Keep the packaged resource prefix short for compatibility with Windows
+    // tools and user-selected installation directories.
     extraResource: ['build/backend/b']
   },
   makers: [
@@ -125,21 +125,9 @@ module.exports = {
         }
       }
     },
-    ...(distribution === 'full' ? [{
-      name: '@electron-forge/maker-squirrel',
-      platforms: ['win32'],
-      config: {
-        name: 'GnosisImages',
-        authors: 'Hans',
-        description: 'Museum image search ranked by the PAMELA criterion model',
-        setupExe: `Gnosis-Images-Full-Installer-${packageVersion}-${targetArch}.exe`,
-        setupIcon: path.resolve('assets/icon.ico'),
-        noMsi: true
-      }
-    }] : []),
     {
       name: '@electron-forge/maker-zip',
-      platforms: distribution === 'update' ? ['win32'] : ['darwin']
+      platforms: ['darwin']
     }
   ],
   publishers: [

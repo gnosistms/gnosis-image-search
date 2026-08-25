@@ -1,0 +1,25 @@
+appId: org.gnosis.image-search
+productName: Gnosis Images
+directories:
+  buildResources: assets
+  output: out/full/make
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: icon.ico
+  artifactName: Gnosis-Images-Installer-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  shortcutName: Gnosis Images
+  runAfterFinish: true
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  uninstallDisplayName: Gnosis Images
+  include: installer/nsis-finish.nsh

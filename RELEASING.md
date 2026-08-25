@@ -26,24 +26,25 @@ CI rejects any individual release asset larger than 1.9 GiB before publication.
    storage into this repository. Unsigned macOS builds cannot use automatic
    updates.
 6. Bump `package.json`, commit, and push a matching tag such as `v0.2.0`.
-7. Inspect the release artifacts on a clean machine. Both `Full-Installer` and
-   `Update` packages must omit the SigLIP checkpoint. On first launch, confirm
+7. Inspect the release artifacts on a clean machine. Every application
+   installer must omit the SigLIP checkpoint. On first launch, confirm
    the required download modal appears, cancellation closes the app, and the
    platform-neutral model package is installed before the backend starts.
    Also confirm that a remote collection search works without setting
    `SSL_CERT_FILE`; the app must use the Certifi CA bundle included in the
    packaged backend.
-8. Test the Windows x64 full `Setup.exe` installation, Start-menu shortcut,
-   uninstall flow, and model-free update `.zip` on a clean Windows system. The
-   Squirrel installer is per-user and should not request administrator access.
+8. Test the Windows x64 NSIS `.exe` installation, visible progress, optional
+   desktop shortcut, completion page, Start-menu shortcut, update installation,
+   migration from the final Squirrel build, and uninstall flow on a clean
+   Windows system. Test both current-user and all-users installation modes.
    Windows builds are currently unsigned and may show a Microsoft
    Defender SmartScreen warning until a Windows code-signing certificate is
    configured.
 
 The app checks GitHub Releases at startup. If the required model is absent, it
 downloads and verifies the `.gnosis-model` asset into the user-owned model cache
-before starting the backend; cancelling closes the app. Update checks select the
-explicitly named, model-free `Update` artifact, while the public download page
-selects `Full-Installer`. Model weights and the local embedding database remain
-untouched by application updates. Never rename an update to look like a full
-installer (or vice versa): asset selection intentionally does not fall back.
+before starting the backend; cancelling closes the app. Windows update checks
+reuse the explicitly named model-free `Installer` executable. macOS continues
+to select the explicitly named `Update` DMG, while the public download page
+selects the full installer. Model weights and the local embedding database
+remain untouched by application updates.
