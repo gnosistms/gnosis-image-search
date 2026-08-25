@@ -26,8 +26,7 @@ test('packaged backend uses the CA bundle shipped with Certifi', () => {
     certificatePath,
     path.join(
       resourcesPath,
-      'backend',
-      'gnosis-search-engine',
+      'b',
       '_internal',
       'certifi',
       'cacert.pem'
@@ -66,10 +65,10 @@ test('packaged backend selects the native executable name', () => {
   const resourcesPath = path.join(path.sep, 'app', 'resources');
   assert.equal(
     packagedBackendExecutable(resourcesPath, 'darwin'),
-    path.join(resourcesPath, 'backend', 'gnosis-search-engine', 'gnosis-search-engine')
+    path.join(resourcesPath, 'b', 'gnosis-search-engine')
   );
   assert.equal(
     packagedBackendExecutable(resourcesPath, 'win32'),
-    path.join(resourcesPath, 'backend', 'gnosis-search-engine', 'gnosis-search-engine.exe')
+    path.join(resourcesPath, 'b', 'gnosis-search-engine.exe')
   );
 });

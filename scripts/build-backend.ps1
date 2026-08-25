@@ -75,10 +75,14 @@ $PyInstallerArgs = @(
 & $PythonBin -m PyInstaller @PyInstallerArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$CaBundle = Join-Path $OutputDir 'gnosis-search-engine\_internal\certifi\cacert.pem'
+$BuiltBackend = Join-Path $OutputDir 'gnosis-search-engine'
+$PackagedBackend = Join-Path $OutputDir 'b'
+Move-Item $BuiltBackend $PackagedBackend
+
+$CaBundle = Join-Path $PackagedBackend '_internal\certifi\cacert.pem'
 if (-not (Test-Path $CaBundle -PathType Leaf)) {
   throw "Packaged backend is missing its Certifi CA bundle: $CaBundle"
 }
 
-& $PythonBin (Join-Path $ProjectDir 'scripts\package-europeana-key.py') (Join-Path $OutputDir 'gnosis-search-engine\credentials')
+& $PythonBin (Join-Path $ProjectDir 'scripts\package-europeana-key.py') (Join-Path $PackagedBackend 'credentials')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

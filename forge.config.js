@@ -87,7 +87,9 @@ module.exports = {
       /[\\/]vendor(?:[\\/]|$)/,
       /[\\/]web(?:[\\/]|$)/
     ],
-    extraResource: ['build/backend']
+    // Keep the packaged resource prefix short because Squirrel/NuGet still
+    // applies Windows' legacy MAX_PATH limit to deeply nested PyTorch files.
+    extraResource: ['build/backend/b']
   },
   makers: [
     {

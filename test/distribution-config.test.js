@@ -21,7 +21,7 @@ function distributionConfig(distribution, arch) {
 test('full distribution is model-free and uses a separate output tree', () => {
   const config = distributionConfig('full', 'arm64');
   assert.equal(config.buildIdentifier, 'full');
-  assert.deepEqual(config.packagerConfig.extraResource, ['build/backend']);
+  assert.deepEqual(config.packagerConfig.extraResource, ['build/backend/b']);
   assert.equal(config.packagerConfig.extraResource.includes('build/bundled-models'), false);
   const dmg = config.makers.find(maker => maker.name === '@electron-forge/maker-dmg');
   assert.match(dmg.config.name, /Gnosis-Images-Full-Installer-.*-arm64/);
@@ -35,7 +35,7 @@ test('full distribution is model-free and uses a separate output tree', () => {
 test('update distribution is also model-free', () => {
   const config = distributionConfig('update', 'x64');
   assert.equal(config.buildIdentifier, 'update');
-  assert.deepEqual(config.packagerConfig.extraResource, ['build/backend']);
+  assert.deepEqual(config.packagerConfig.extraResource, ['build/backend/b']);
   assert.equal(config.packagerConfig.extraResource.includes('build/bundled-models'), false);
   const zip = config.makers.find(maker => maker.name === '@electron-forge/maker-zip');
   assert.deepEqual(zip.platforms, ['win32']);

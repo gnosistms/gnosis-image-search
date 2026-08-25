@@ -1,8 +1,7 @@
 const path = require('node:path');
 
 const BUNDLED_CA_RELATIVE_PATH = path.join(
-  'backend',
-  'gnosis-search-engine',
+  'b',
   '_internal',
   'certifi',
   'cacert.pem'
@@ -15,8 +14,7 @@ function bundledCertificatePath(resourcesPath) {
 function packagedBackendExecutable(resourcesPath, platform = process.platform) {
   return path.join(
     resourcesPath,
-    'backend',
-    'gnosis-search-engine',
+    'b',
     platform === 'win32' ? 'gnosis-search-engine.exe' : 'gnosis-search-engine'
   );
 }
