@@ -150,7 +150,7 @@ jobs:
       - name: Build guided NSIS installer
         run: |
           $packagedApp = Join-Path $PWD 'out\full\Gnosis Images-win32-x64'
-          npx electron-builder --win nsis --x64 --prepackaged $packagedApp
+          npx electron-builder --win nsis --x64 --prepackaged $packagedApp --publish never
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $expectedName = "Gnosis-Images-Installer-$version-x64.exe"

@@ -14,7 +14,7 @@ try {
     throw "Forge did not produce the packaged Windows application at $PackagedApp."
   }
 
-  & npx electron-builder --win nsis --x64 --prepackaged $PackagedApp
+  & npx electron-builder --win nsis --x64 --prepackaged $PackagedApp --publish never
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   $Version = (Get-Content (Join-Path $ProjectDir 'package.json') | ConvertFrom-Json).version

@@ -56,9 +56,13 @@ test('packager excludes development data using absolute paths', () => {
 test('Windows NSIS installer uses a guided finish page and one shared artifact', () => {
   const builderConfig = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.yml'), 'utf8');
   const finishPage = fs.readFileSync(path.join(__dirname, '..', 'installer', 'nsis-finish.nsh'), 'utf8');
+  const installerScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'make-windows-installer.ps1'), 'utf8');
+  const releaseWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8');
   assert.match(builderConfig, /oneClick: false/);
   assert.match(builderConfig, /artifactName: Gnosis-Images-Installer-/);
   assert.match(builderConfig, /createDesktopShortcut: false/);
+  assert.match(installerScript, /--publish never/);
+  assert.match(releaseWorkflow, /--publish never/);
   assert.match(finishPage, /Gnosis Images has been installed/);
   assert.match(finishPage, /Create a desktop shortcut/);
   assert.match(finishPage, /Run Gnosis Images/);
