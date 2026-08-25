@@ -123,9 +123,21 @@ module.exports = {
         }
       }
     },
+    ...(distribution === 'full' ? [{
+      name: '@electron-forge/maker-squirrel',
+      platforms: ['win32'],
+      config: {
+        name: 'GnosisImages',
+        authors: 'Hans',
+        description: 'Museum image search ranked by the PAMELA criterion model',
+        setupExe: `Gnosis-Images-Full-Installer-${packageVersion}-${targetArch}.exe`,
+        setupIcon: path.resolve('assets/icon.ico'),
+        noMsi: true
+      }
+    }] : []),
     {
       name: '@electron-forge/maker-zip',
-      platforms: distribution ? ['win32'] : ['darwin']
+      platforms: distribution === 'update' ? ['win32'] : ['darwin']
     }
   ],
   publishers: [

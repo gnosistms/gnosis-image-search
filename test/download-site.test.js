@@ -86,3 +86,43 @@ test('macOS download starts without navigating the top-level page', async () => 
   assert.equal(help.hidden, false);
   assert.equal(button.attributes['aria-busy'], undefined);
 });
+
+test('Windows download selects Setup.exe instead of an update ZIP', async () => {
+  const button = element();
+  const note = element();
+  const elements = {
+    '#download': button,
+    '#download-fallback': element(),
+    '#download-help': { hidden: true },
+    '#platform-note': note,
+  };
+  const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'download.js'), 'utf8');
+
+  vm.runInNewContext(source, {
+    clearTimeout() {},
+    document: { querySelector: selector => elements[selector] },
+    fetch: async () => ({
+      json: async () => ({
+        assets: [{
+          browser_download_url: 'https://example.test/Gnosis-Images-Update.zip',
+          name: 'Gnosis-Images-Update-1.0.0-x64.zip',
+          size: 100,
+        }, {
+          browser_download_url: 'https://example.test/Gnosis-Images-Setup.exe',
+          name: 'Gnosis-Images-Full-Installer-1.0.0-x64.exe',
+          size: 209715200,
+        }],
+        html_url: 'https://example.test/releases/v1',
+        tag_name: 'v1.0.0',
+      }),
+      ok: true,
+    }),
+    navigator: { platform: 'Win32', userAgent: 'Mozilla/5.0 (Windows NT 10.0)' },
+    setTimeout: () => 1,
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(button.href, 'https://example.test/Gnosis-Images-Setup.exe');
+  assert.equal(button.textContent, 'Download for Windows');
+  assert.equal(note.textContent, '1.0.0 · Windows · 200 MB');
+});

@@ -26,7 +26,10 @@ test('full distribution is model-free and uses a separate output tree', () => {
   const dmg = config.makers.find(maker => maker.name === '@electron-forge/maker-dmg');
   assert.match(dmg.config.name, /Gnosis-Images-Full-Installer-.*-arm64/);
   const zip = config.makers.find(maker => maker.name === '@electron-forge/maker-zip');
-  assert.deepEqual(zip.platforms, ['win32']);
+  assert.deepEqual(zip.platforms, ['darwin']);
+  const squirrel = config.makers.find(maker => maker.name === '@electron-forge/maker-squirrel');
+  assert.deepEqual(squirrel.platforms, ['win32']);
+  assert.match(squirrel.config.setupExe, /Gnosis-Images-Full-Installer-.*-arm64\.exe/);
 });
 
 test('update distribution is also model-free', () => {
@@ -36,6 +39,7 @@ test('update distribution is also model-free', () => {
   assert.equal(config.packagerConfig.extraResource.includes('build/bundled-models'), false);
   const zip = config.makers.find(maker => maker.name === '@electron-forge/maker-zip');
   assert.deepEqual(zip.platforms, ['win32']);
+  assert.equal(config.makers.some(maker => maker.name === '@electron-forge/maker-squirrel'), false);
 });
 
 test('packager excludes development data using absolute paths', () => {

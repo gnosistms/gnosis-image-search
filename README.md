@@ -6,15 +6,14 @@ in parallel and orders results by image size × the learned criterion score.
 
 ## Why it is a desktop app
 
-The Electron interface supervises a bundled Python/PyTorch search engine. The
-full installer includes the default SigLIP checkpoint and seeds it into a
-user-owned cache before starting the backend, so first use never begins with a
-silent multi-gigabyte download. Comparison preferences, indexes, and embeddings
-are stored alongside that cache outside the replaceable application data.
-Routine releases provide a separately named, model-free update installer and
-therefore do not download an unchanged checkpoint again. Managed model profiles
-can still deliberately replace a checkpoint and remove its retired app-owned
-files without touching shared Hugging Face data.
+The Electron interface supervises a bundled Python/PyTorch search engine. On
+first launch, the app downloads and verifies the separately published SigLIP
+model package into a user-owned cache before starting the backend. Comparison
+preferences, indexes, and embeddings are stored alongside that cache outside
+the replaceable application data. Routine application updates are therefore
+model-free and do not download an unchanged checkpoint again. Managed model
+profiles can still deliberately replace a checkpoint and remove its retired
+app-owned files without touching shared Hugging Face data.
 
 On macOS the app creates its writable data under:
 
@@ -68,10 +67,10 @@ The application checks the latest public GitHub Release at startup. If a newer
 version exists, it asks for permission before downloading and installing only
 the smaller `Update` asset.
 macOS updates require a Developer ID-signed and notarized build. New Windows
-x64 installations use the full ZIP (extract it, then run `Gnosis Images.exe`).
-Windows updates download a smaller model-free ZIP and reveal it in File Explorer
-for manual replacement; Windows builds remain unsigned until a code-signing
-certificate is configured. See
+x64 installations use the per-user `Setup.exe` installer, which does not require
+administrator access. Windows updates download a smaller model-free ZIP and
+reveal it in File Explorer for manual replacement; Windows builds remain
+unsigned until a code-signing certificate is configured. See
 [RELEASING.md](RELEASING.md) for the provisioning and release procedure.
 
 ## Tests

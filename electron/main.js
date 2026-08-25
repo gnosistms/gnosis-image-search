@@ -1,4 +1,7 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, systemPreferences } = require('electron');
+// Squirrel invokes the app during install, update, and uninstall. Handle those
+// events before normal startup so it can create or remove Windows shortcuts.
+if (require('electron-squirrel-startup')) app.quit();
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
@@ -18,6 +21,9 @@ const APP_DATA_NAME = 'Gnosis Image Search';
 // bar and system-provided menu items use the product name in every build mode.
 app.setPath('userData', path.join(app.getPath('appData'), APP_DATA_NAME));
 app.setName(APP_NAME);
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.squirrel.GnosisImages.GnosisImages');
+}
 if (process.platform === 'darwin') {
   // NSSavePanel otherwise defaults to its collapsed two-row presentation.
   // Persist AppKit's expanded browser state for both legacy and current modes.

@@ -147,11 +147,11 @@ jobs:
           $env:GNOSIS_DISTRIBUTION = 'full'
           npx electron-forge make --platform=win32 --arch=x64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $zip = Get-ChildItem 'out\full\make\zip\win32\x64\*.zip' | Select-Object -First 1
-          if (-not $zip) { throw 'Forge did not produce the full Windows ZIP.' }
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          $name = "Gnosis-Images-Full-Installer-$version-x64.zip"
-          Move-Item -Force $zip.FullName (Join-Path $zip.DirectoryName $name)
+          $installer = Get-ChildItem 'out\full\make\squirrel.windows\x64\*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Forge did not produce the full Windows Setup.exe installer.' }
+          $expectedName = "Gnosis-Images-Full-Installer-$version-x64.exe"
+          if ($installer.Name -ne $expectedName) { throw "Unexpected Windows installer name: $($installer.Name)" }
       - name: Package Windows update
         run: |
           $env:GNOSIS_TARGET_ARCH = 'x64'
@@ -180,7 +180,7 @@ jobs:
           }
       - name: Verify Windows release asset sizes
         run: |
-          $oversized = Get-ChildItem 'out\full\make', 'out\update\make' -Recurse -Filter '*.zip' |
+          $oversized = Get-ChildItem 'out\full\make', 'out\update\make' -Recurse -Include '*.exe', '*.zip' |
             Where-Object { $_.Length -gt 1900MB } |
             Select-Object -First 1
           if ($oversized) { throw "Release asset exceeds the safe GitHub upload limit: $($oversized.FullName)" }

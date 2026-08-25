@@ -24,7 +24,7 @@ test('updater never falls back to a full installer', () => {
 
 test('Windows updater selects only a model-free update ZIP', () => {
   const release = { assets: [
-    asset('Gnosis-Images-Full-Installer-1.2.0-x64.zip'),
+    asset('Gnosis-Images-Full-Installer-1.2.0-x64.exe'),
     asset('Gnosis-Images-Update-1.2.0-x64.zip'),
   ] };
   assert.equal(
