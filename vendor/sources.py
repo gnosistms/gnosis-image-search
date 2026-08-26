@@ -381,13 +381,24 @@ def _aic_search_is_fallback(data):
         return False
     return max(scores) < AIC_SEARCH_FALLBACK_MAX_SCORE
 
+
+def _aic_relevant_search_records(data):
+    """Remove match-all padding while retaining genuine or unscored results."""
+    records = (data or {}).get("data") or []
+    return [
+        record for record in records
+        if not isinstance(record.get("_score"), (int, float))
+        or record["_score"] >= AIC_SEARCH_FALLBACK_MAX_SCORE
+    ]
+
+
 def aic(query, need, cue=None):
     d = _get_json(f"https://api.artic.edu/api/v1/artworks/search?q={_q(query)}"
                   f"&limit={need * 2}&fields=id,title,artist_display,date_display,"
                   f"medium_display,image_id,is_public_domain,thumbnail", "aic")
     if _aic_search_is_fallback(d):
         return []
-    artworks = [a for a in (d or {}).get("data", [])
+    artworks = [a for a in _aic_relevant_search_records(d)
                 if a.get("image_id") and a.get("is_public_domain")][:need]
     artwork_ids = [a.get("id") for a in artworks]
     # These are independent remote indexes. Start both immediately so latency

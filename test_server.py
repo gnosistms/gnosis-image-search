@@ -1300,6 +1300,30 @@ class BatchTests(unittest.TestCase):
              sources._wayback_aic_images_for) = originals
         self.assertEqual([item["source_id"] for item in items], ["16327"])
 
+    def test_aic_discards_match_all_padding_after_genuine_results(self):
+        response = {"data": [{
+            "_score": 79.5, "id": 185963, "title": "Cauldron",
+            "image_id": "cauldron", "is_public_domain": True,
+            "thumbnail": {},
+        }, {
+            "_score": 0.000024, "id": 16568, "title": "Water Lilies",
+            "image_id": "water-lilies", "is_public_domain": True,
+            "thumbnail": {},
+        }]}
+        originals = (sources._get_json, sources._aic_commons_images,
+                     sources._hf_aic_images_for, sources._wayback_aic_images_for)
+        sources._get_json = lambda *args, **kwargs: response
+        sources._aic_commons_images = lambda ids: {}
+        sources._hf_aic_images_for = lambda ids: {}
+        sources._wayback_aic_images_for = lambda artworks: {}
+        try:
+            items = sources.aic("Cauldron", 10)
+        finally:
+            (sources._get_json, sources._aic_commons_images,
+             sources._hf_aic_images_for,
+             sources._wayback_aic_images_for) = originals
+        self.assertEqual([item["source_id"] for item in items], ["185963"])
+
     def test_aic_uses_hugging_face_preview_and_preserves_native_dimensions(self):
         response = {
             "config": {"iiif_url": "https://images.example/iiif/2"},
