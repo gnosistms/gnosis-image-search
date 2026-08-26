@@ -157,6 +157,11 @@ body.desktop-app .window-resize-edge-left { top: 0; bottom: 0; left: 0; width: 6
 .detail-info { padding: 18px 19px 16px; border-bottom: 1px solid var(--line); }
 .detail-source { min-width: 0; margin: 0; overflow: hidden; color: var(--accent); font-size: 11px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .detail-info h1 { margin: 7px 0 5px; color: #302823; font: 500 25px/1.12 Georgia, "Times New Roman", serif; letter-spacing: -.015em; }
+.detail-attribution { display: grid; gap: 4px; margin: 9px 0 12px; }
+.detail-attribution div { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 9px; align-items: baseline; }
+.detail-attribution div[hidden] { display: none; }
+.detail-attribution dt { color: #8a5d6b; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.detail-attribution dd { min-width: 0; margin: 0; color: #4f4843; font-size: 12px; line-height: 1.4; white-space: pre-line; }
 .detail-description { margin: 0 0 12px; color: #6f6760; font-size: 12px; line-height: 1.45; white-space: pre-line; }
 .detail-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; color: #8a5d6b; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .detail-meta span:empty { display: none; }

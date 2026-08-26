@@ -488,14 +488,54 @@ def smk(query, need, cue=None):
 
 # ---------------- Wellcome Collection ----------------
 
+def _wellcome_work_metadata(work):
+    contributors = work.get("contributors") or []
+    primary = [value for value in contributors if value.get("primary")]
+    ordered = primary + [value for value in contributors if value not in primary]
+    artist = "; ".join(dict.fromkeys(
+        str((value.get("agent") or {}).get("label") or "").strip()
+        for value in ordered
+        if (value.get("agent") or {}).get("label")
+    ))
+    dates = []
+    for event in work.get("production") or []:
+        dates.extend(
+            str(value.get("label") or "").strip()
+            for value in event.get("dates") or []
+            if value.get("label")
+        )
+    date = "; ".join(dict.fromkeys(dates))
+    medium = str(work.get("physicalDescription") or "").strip()
+    if not medium:
+        medium = str((work.get("workType") or {}).get("label") or "").strip()
+    return artist, date, medium
+
+
 def wellcome(query, need, cue=None):
-    d = _get_json(f"https://api.wellcomecollection.org/catalogue/v2/images"
-                  f"?query={_q(query)}&pageSize={min(need * 2, 100)}", "wellcome")
+    page_size = min(need * 2, 100)
+    image_url = ("https://api.wellcomecollection.org/catalogue/v2/images?"
+                 + urllib.parse.urlencode({"query": query, "pageSize": page_size}))
+    d = _get_json(image_url, "wellcome")
+    results = (d or {}).get("results", [])
+    work_ids = list(dict.fromkeys(
+        str((image.get("source") or {}).get("id") or "")
+        for image in results
+        if (image.get("source") or {}).get("id")
+    ))
+    def fetch_work(work_id):
+        url = (f"https://api.wellcomecollection.org/catalogue/v2/works/{work_id}?"
+               + urllib.parse.urlencode({"include": "contributors,production"}))
+        return _get_json(url, "wellcome_works") or {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(work_ids) or 1)) as pool:
+        work_records = pool.map(fetch_work, work_ids)
+    work_by_id = dict(zip(work_ids, work_records))
     out = []
-    for a in (d or {}).get("results", []):
+    for a in results:
         try:
             iid = a["id"]
             src = a.get("source", {}) or {}
+            work = work_by_id.get(str(src.get("id") or ""), {})
+            artist, date, medium = _wellcome_work_metadata(work)
             thumb = (a.get("thumbnail") or {}).get("url", "")
             # thumbnail.url is the IIIF info.json (image NUMBER, not the
             # catalogue id) — strip it to get the IIIF base
@@ -506,8 +546,10 @@ def wellcome(query, need, cue=None):
             else:
                 continue
             out.append({"source": "wellcome", "source_id": iid,
-                        "title": src.get("title", ""), "artist": "", "date": "",
-                        "medium": "", "license": "CC-BY/PD",
+                        "title": src.get("title", ""), "artist": artist,
+                        "date": date, "medium": medium,
+                        "license": str((((a.get("thumbnail") or {}).get("license")
+                                         or {}).get("label") or "CC-BY/PD")),
                         "page_url": f"https://wellcomecollection.org/works/{src.get('id', '')}/images?id={iid}",
                         "image_url": f"{base}/full/max/0/default.jpg",
                         "thumb_url": f"{base}/full/1024,/0/default.jpg",
@@ -728,6 +770,7 @@ def gnosis(query, need, cue=None):
 
 def _gnosis_live(query, need, cue=None):
     import html as _html, re as _re
+    from gnosis_catalog import artwork_metadata
     d = _get_json("https://gnosisvn.org/wp-json/wp/v2/media?"
                   + urllib.parse.urlencode({"search": query, "media_type": "image",
                                             "per_page": min(need * 2, 50)}),
@@ -751,10 +794,16 @@ def _gnosis_live(query, need, cue=None):
                     r"<[^>]+>", " ", (m.get("description") or {}).get("rendered", "")
                 ))
             english = " ".join(english.split())
+            image_meta = (md.get("image_meta") or {})
+            artist, artwork_date = artwork_metadata(
+                title=_html.unescape((m.get("title") or {}).get("rendered", "")),
+                description=english, caption=cap,
+                credit=image_meta.get("credit", ""),
+                metadata_caption=image_meta.get("caption", ""),
+            )
             out.append({"source": "gnosis", "source_id": str(m["id"]),
                         "title": _html.unescape((m.get("title") or {}).get("rendered", "")),
-                        "artist": "", "date": "",  # artwork date unknown; upload
-                        # date would trip the art-age gate, so leave blank
+                        "artist": artist, "date": artwork_date,
                         "medium": " · ".join(filter(None, [english[:500], cap[:160]])),
                         "license": "house (gnosisvn.org)",
                         "page_url": m.get("link", ""),

@@ -74,6 +74,15 @@ _UNIVERSAL_COMASONRY_REFRESH_LOCK = threading.Lock()
 _UNIVERSAL_COMASONRY_REFRESH_THREAD: threading.Thread | None = None
 
 
+def _nga_artwork_url(object_id: str, title: str) -> str:
+    """Build the NGA's current ID-and-title artwork route."""
+    normalized = unicodedata.normalize("NFKD", str(title or ""))
+    ascii_title = normalized.encode("ascii", "ignore").decode("ascii").casefold()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_title).strip("-")
+    suffix = f"-{slug}" if slug else ""
+    return f"https://www.nga.gov/artworks/{object_id}{suffix}"
+
+
 class _UniversalComasonryGalleryParser(HTMLParser):
     """Extract gallery links and their images from Universal Co-Masonry HTML."""
 
@@ -432,6 +441,13 @@ def _metadata_value(metadata: dict, name: str) -> str:
     return html.unescape(_HTML_TAG.sub("", value)).strip()
 
 
+def _commons_artwork_date(metadata: dict) -> str:
+    value = _metadata_value(metadata, "DateTimeOriginal")
+    # Commons templates sometimes append their QuickStatements import payload
+    # to the human-readable date in extmetadata.
+    return re.sub(r"\s*date\s+QS:.*$", "", value, flags=re.IGNORECASE).strip()
+
+
 def _commons_search_tokens(value: object) -> list[str]:
     folded = unicodedata.normalize("NFKD", str(value or ""))
     folded = "".join(char for char in folded if not unicodedata.combining(char))
@@ -531,7 +547,7 @@ def parse_museum_commons_response(
                 "source_id": str(page.get("title") or ""),
                 "title": str(page.get("title") or "Untitled").removeprefix("File:"),
                 "artist": _metadata_value(metadata, "Artist")[:160],
-                "date": _metadata_value(metadata, "DateTimeOriginal"),
+                "date": _commons_artwork_date(metadata),
                 "medium": _metadata_value(metadata, "ObjectName")
                     or _metadata_value(metadata, "Credit")[:160],
                 "description": (
@@ -924,6 +940,7 @@ def parse_mia_response(data: dict, need: int) -> list[dict]:
                 "artist": str(record.get("artist") or ""),
                 "date": str(record.get("dated") or ""),
                 "medium": str(record.get("medium") or record.get("classification") or ""),
+                "description": str(record.get("text") or ""),
                 "license": "Public Domain",
                 "page_url": f"https://collections.artsmia.org/art/{source_id}",
                 "image_url": image_url, "thumb_url": thumb_url,
@@ -1214,16 +1231,17 @@ class NGACatalog:
         out = []
         for row in rows:
             iiif = str(row["iiifurl"] or "").rstrip("/")
+            title = str(row["title"] or "Untitled")
             out.append({
                 "source": "nga", "source_id": str(row["objectid"]),
-                "title": str(row["title"] or "Untitled"),
+                "title": title,
                 "artist": str(row["artist"] or ""),
                 "date": str(row["displaydate"] or ""),
                 "medium": "; ".join(filter(None, (
                     str(row["classification"] or ""), str(row["medium"] or "")
                 ))),
                 "license": "NGA Open Access",
-                "page_url": f'https://www.nga.gov/artworks/{row["objectid"]}',
+                "page_url": _nga_artwork_url(str(row["objectid"]), title),
                 "image_url": f"{iiif}/full/full/0/default.jpg",
                 # NGA's published iiifthumburl is only 200 px wide. That is
                 # visibly soft in our 520 px tiles (and worse on HiDPI

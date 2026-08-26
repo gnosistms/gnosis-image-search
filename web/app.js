@@ -25,6 +25,10 @@ const copyFullSizeImageUrl = document.querySelector('#copy-full-size-image-url')
 const copyImageUrlStatus = document.querySelector('#copy-image-url-status');
 const detailTitle = document.querySelector('#detail-title');
 const detailSource = document.querySelector('#detail-source');
+const detailArtistRow = document.querySelector('#detail-artist-row');
+const detailArtist = document.querySelector('#detail-artist');
+const detailDateRow = document.querySelector('#detail-date-row');
+const detailDate = document.querySelector('#detail-date');
 const detailDescription = document.querySelector('#detail-description');
 const detailLicense = document.querySelector('#detail-license');
 const detailSize = document.querySelector('#detail-size');
@@ -570,6 +574,10 @@ async function openDetails(id, previewImage) {
   showDetailImage(item, previewImage || galleryPreview);
   detailTitle.textContent = item.title;
   detailSource.textContent = item.source_label;
+  detailArtist.textContent = item.artist || '';
+  detailArtistRow.hidden = !item.artist;
+  detailDate.textContent = item.date || '';
+  detailDateRow.hidden = !item.date;
   detailDescription.textContent = item.description || 'No additional description was supplied by this collection.';
   detailLicense.textContent = item.license;
   detailSize.textContent = '';

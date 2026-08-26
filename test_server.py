@@ -561,6 +561,43 @@ class BatchTests(unittest.TestCase):
             keys.get_key = original_get_key
             sources._get_json = original_get_json
 
+    def test_wellcome_enriches_images_with_work_artist_and_date(self):
+        image_response = {"results": [{
+            "id": "image-1",
+            "source": {"id": "work-1", "title": "An etching"},
+            "thumbnail": {
+                "url": "https://iiif.wellcome.test/image/info.json",
+                "license": {"label": "Public Domain Mark"},
+            },
+        }]}
+        work_response = {
+            "id": "work-1",
+            "contributors": [{
+                "primary": True,
+                "agent": {"label": "Primary Artist"},
+            }, {
+                "primary": False,
+                "agent": {"label": "Printmaker"},
+            }],
+            "production": [{"dates": [{"label": "about 1781"}]}],
+            "physicalDescription": "1 etching",
+        }
+        calls = []
+        original = sources._get_json
+        def fake_get(url, *args, **kwargs):
+            calls.append(url)
+            return work_response if "/works/work-1?" in url else image_response
+        sources._get_json = fake_get
+        try:
+            item = sources.wellcome("etching", 1)[0]
+        finally:
+            sources._get_json = original
+        self.assertTrue(any("/works/work-1?" in url for url in calls))
+        self.assertEqual(item["artist"], "Primary Artist; Printmaker")
+        self.assertEqual(item["date"], "about 1781")
+        self.assertEqual(item["medium"], "1 etching")
+        self.assertEqual(item["license"], "Public Domain Mark")
+
     def test_encrypted_credentials_round_trip_from_separate_files(self):
         original_env = {
             name: keys.os.environ.get(name)
@@ -629,6 +666,7 @@ class BatchTests(unittest.TestCase):
         payload = {"hits": {"hits": [{"_id": "529", "_source": {
             "id": 529, "title": "Lucretia", "artist": "Rembrandt",
             "dated": "1666", "medium": "Oil on canvas",
+            "text": "A detailed curatorial description of the painting.",
             "rights_type": "Public Domain", "image": "valid",
             "public_access": 1, "image_width": 4812, "image_height": 5787,
             "Cache_Location": "000000\\500\\20\\529",
@@ -640,6 +678,10 @@ class BatchTests(unittest.TestCase):
         items = additional_sources.parse_mia_response(payload, 10)
         self.assertEqual([item["source_id"] for item in items], ["529"])
         self.assertEqual((items[0]["width"], items[0]["height"]), (4812, 5787))
+        self.assertEqual(
+            items[0]["description"],
+            "A detailed curatorial description of the painting.",
+        )
         self.assertEqual(
             items[0]["thumb_url"],
             "https://img.artsmia.org/web_objects_cache/"
@@ -682,6 +724,9 @@ class BatchTests(unittest.TestCase):
                 "width": 3000, "height": 2000,
                 "extmetadata": {
                     "Artist": {"value": "<b>Example Artist</b>"},
+                    "DateTimeOriginal": {
+                        "value": "circa 1509date QS:P571,+1509-00-00T00:00:00Z/9"
+                    },
                     "ImageDescription": {"value": "Saint Peter in prison"},
                     "LicenseShortName": {"value": "CC BY-SA 4.0"},
                 },
@@ -704,6 +749,7 @@ class BatchTests(unittest.TestCase):
         self.assertIn("haswbstatement:P180", query)
         self.assertEqual([item["source_id"] for item in items], ["File:Museum work.jpg"])
         self.assertEqual(items[0]["artist"], "Example Artist")
+        self.assertEqual(items[0]["date"], "circa 1509")
 
     def test_commons_metadata_filter_is_typo_tolerant_but_rejects_weak_matches(self):
         self.assertTrue(additional_sources.commons_metadata_is_relevant(
@@ -1076,6 +1122,19 @@ class BatchTests(unittest.TestCase):
             results[0]["thumb_url"],
             "https://api.nga.gov/iiif/a/full/!1024,1024/0/default.jpg",
         )
+        self.assertEqual(
+            results[0]["page_url"],
+            "https://www.nga.gov/artworks/7-the-liberation-of-saint-peter",
+        )
+
+    def test_nga_artwork_url_includes_title_slug_required_by_current_site(self):
+        self.assertEqual(
+            additional_sources._nga_artwork_url(
+                "37134", "Mars and Venus (Mercury and Venus?)"
+            ),
+            "https://www.nga.gov/artworks/"
+            "37134-mars-and-venus-mercury-and-venus",
+        )
 
     def test_gnosis_catalog_unchanged_probe_skips_record_download(self):
         catalog = gnosis_catalog.GnosisCatalog("/tmp/nonexistent-gnosis-probe.json")
@@ -1088,6 +1147,44 @@ class BatchTests(unittest.TestCase):
         catalog._fetch_records = lambda *args: self.fail("downloaded unchanged records")
         self.assertEqual(catalog.refresh(), 1)
         self.assertEqual(catalog.last_refresh_mode, "unchanged")
+
+    def test_gnosis_catalog_extracts_explicit_artist_and_artwork_date(self):
+        record = gnosis_catalog.wordpress_record({
+            "id": 24352,
+            "title": {"rendered": "Madonna with Child"},
+            "caption": {"rendered": "<p>A devotional painting.</p>"},
+            "jetpack_videopress": {
+                "description": (
+                    "The Madonna and Child by Giovanni Battista Salvi da "
+                    "Sassoferrato (1640), showing Mary and the infant Jesus."
+                ),
+            },
+            "media_details": {
+                "width": 1200, "height": 1600,
+                # WordPress credit can name the uploader/photographer rather
+                # than the artist; the curated description is authoritative.
+                "image_meta": {"credit": "Example Photographer"},
+            },
+            "source_url": "https://gnosis.test/madonna.jpg",
+            "mime_type": "image/jpeg",
+        })
+        self.assertEqual(
+            record["artist"], "Giovanni Battista Salvi da Sassoferrato"
+        )
+        self.assertEqual(record["date"], "1640")
+
+    def test_gnosis_catalog_prefers_explicit_image_credit_and_date(self):
+        artist, artwork_date = gnosis_catalog.artwork_metadata(
+            title="1640-50",
+            description="The Virgin in Prayer, an oil painting.",
+            credit="Sassoferrato",
+            metadata_caption=(
+                "Full title: The Virgin in Prayer\r\n"
+                "Artist: Sassoferrato\r\nDate made: 1640-50"
+            ),
+        )
+        self.assertEqual(artist, "Sassoferrato")
+        self.assertEqual(artwork_date, "1640-50")
 
     def test_gnosis_catalog_incrementally_merges_modified_records(self):
         catalog = gnosis_catalog.GnosisCatalog("/tmp/nonexistent-gnosis-merge.json")

@@ -32,6 +32,61 @@ def _text(value) -> str:
     return " ".join(html.unescape(rendered).split())
 
 
+def artwork_metadata(
+    title: str = "", description: str = "", caption: str = "",
+    credit: str = "", metadata_caption: str = "",
+) -> tuple[str, str]:
+    """Extract only explicit artwork credits/dates from curated media text."""
+    combined = "\n".join(filter(None, (
+        str(metadata_caption or ""), str(description or ""), str(caption or ""),
+    )))
+    artist = ""
+    labeled = re.search(r"(?im)^\s*artist\s*:\s*([^\r\n]+)", combined)
+    if labeled:
+        artist = labeled.group(1).strip()
+    if not artist:
+        credited = re.search(
+            r"\bby\s+([A-ZÀ-ÖØ-Þ][^,.;\n]{1,100}?)(?=\s*\(|\s*,|\s*\.)",
+            str(description or ""), re.IGNORECASE,
+        )
+        if credited:
+            artist = credited.group(1).strip()
+    if not artist:
+        artist = str(credit or "").strip()
+        if any(marker in artist.casefold() for marker in (
+            "copyright", "©", "museum", "gallery", "http://", "https://",
+        )):
+            artist = ""
+
+    date = ""
+    labeled_date = re.search(
+        r"(?im)^\s*(?:date made|artwork date|date)\s*:\s*([^\r\n]+)", combined
+    )
+    if labeled_date:
+        date = labeled_date.group(1).strip()
+    if not date:
+        dated_phrase = re.search(
+            r"\b(?:c\.|ca\.|circa|about)\s*\d{3,4}"
+            r"(?:\s*[–—-]\s*\d{2,4})?\b",
+            str(description or ""), re.IGNORECASE,
+        )
+        if dated_phrase:
+            date = dated_phrase.group(0).strip()
+    if not date:
+        parenthetical_year = re.search(
+            r"\((\d{4})\)(?=\s*,?\s*(?:showing|depicting|portraying|featuring))",
+            str(description or ""), re.IGNORECASE,
+        )
+        if parenthetical_year:
+            date = parenthetical_year.group(1)
+    if not date and re.fullmatch(
+        r"(?:c\.?\s*)?\d{3,4}(?:\s*[–—-]\s*\d{2,4})?", str(title or "").strip(),
+        re.IGNORECASE,
+    ):
+        date = str(title).strip()
+    return artist, date
+
+
 def wordpress_record(item: dict) -> dict:
     details = item.get("media_details") or {}
     sizes = details.get("sizes") or {}
@@ -39,6 +94,12 @@ def wordpress_record(item: dict) -> dict:
                   ("1536x1536", "medium_large", "large", "medium")
                   if isinstance(sizes.get(name), dict) and sizes[name].get("source_url")), "")
     rich_description = str((item.get("jetpack_videopress") or {}).get("description") or "")
+    image_meta = details.get("image_meta") or {}
+    artist, artwork_date = artwork_metadata(
+        title=_text(item.get("title")), description=rich_description,
+        caption=_text(item.get("caption")), credit=image_meta.get("credit", ""),
+        metadata_caption=image_meta.get("caption", ""),
+    )
     return {
         "id": int(item.get("id") or 0),
         "title": _text(item.get("title")),
@@ -54,6 +115,8 @@ def wordpress_record(item: dict) -> dict:
         "keywords": rich_description,
         "figures": "",
         "style": "",
+        "artist": artist,
+        "date": artwork_date,
         "page_url": str(item.get("link") or ""),
         "image_url": str(item.get("source_url") or ""),
         "thumb_url": thumb or str(item.get("source_url") or ""),
@@ -81,6 +144,18 @@ class GnosisCatalog:
         try:
             payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
             records = payload.get("records", payload) if isinstance(payload, dict) else payload
+            for record in records:
+                if not record.get("artist") or not record.get("date"):
+                    artist, artwork_date = artwork_metadata(
+                        title=record.get("title", ""),
+                        description=record.get("description", "")
+                            or record.get("wp_description", ""),
+                        caption=record.get("caption_vi", ""),
+                    )
+                    if not record.get("artist"):
+                        record["artist"] = artist
+                    if not record.get("date"):
+                        record["date"] = artwork_date
             prepared = [prepare_record(record) for record in records]
             with self.lock:
                 self.records = prepared
