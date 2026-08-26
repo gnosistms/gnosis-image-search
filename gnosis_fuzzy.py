@@ -210,6 +210,7 @@ def search_records(records: list[dict], query: str, limit: int) -> list[dict]:
             "artist": str(record.get("artist") or ""),
             "date": str(record.get("date") or ""),
             "medium": description[:500],
+            "description": description,
             "license": "house (gnosisvn.org)",
             "page_url": str(record.get("page_url") or ""),
             "image_url": str(record.get("image_url") or ""),

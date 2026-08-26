@@ -1,9 +1,9 @@
 """Museum/archive search adapters. Every adapter returns normalized candidates:
 {source, source_id, title, artist, date, medium, license, page_url,
- image_url, thumb_url, width, height}
+ image_url, thumb_url, width, height, description}
 All requests are disk-cached and polite. Unconfigured/failing sources return [].
 """
-import base64, concurrent.futures, hashlib, io, json, os, threading, time
+import base64, concurrent.futures, hashlib, html, io, json, os, re, threading, time
 import urllib.request, urllib.parse
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -95,6 +95,26 @@ def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
 def _q(s):
     return urllib.parse.quote(str(s))
 
+
+def _description_text(value):
+    """Return one clean human-readable description from API scalar variants."""
+    if isinstance(value, dict):
+        ordered = []
+        for language in ("en", "en-US", "en-GB", "def"):
+            if language in value:
+                ordered.append(value[language])
+        ordered.extend(item for key, item in value.items()
+                       if key not in ("en", "en-US", "en-GB", "def"))
+        value = ordered
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            text = _description_text(item)
+            if text:
+                return text
+        return ""
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    return " ".join(html.unescape(text).split())
+
 # ---------------- Cleveland Museum of Art ----------------
 
 def cleveland(query, need, cue=None):
@@ -111,6 +131,11 @@ def cleveland(query, need, cue=None):
                         "title": a.get("title", ""),
                         "artist": (a.get("creators") or [{}])[0].get("description", ""),
                         "date": a.get("creation_date", ""), "medium": a.get("type", ""),
+                        "description": _description_text(
+                            a.get("description") or a.get("artlens_description")
+                            or a.get("early_education_description")
+                            or a.get("did_you_know")
+                        ),
                         "license": "CC0" if a.get("share_license_status") == "CC0" else "unknown",
                         "page_url": a.get("url", ""), "image_url": full.get("url", web["url"]),
                         "thumb_url": web["url"],
@@ -395,7 +420,8 @@ def _aic_relevant_search_records(data):
 def aic(query, need, cue=None):
     d = _get_json(f"https://api.artic.edu/api/v1/artworks/search?q={_q(query)}"
                   f"&limit={need * 2}&fields=id,title,artist_display,date_display,"
-                  f"medium_display,image_id,is_public_domain,thumbnail", "aic")
+                  f"medium_display,image_id,is_public_domain,thumbnail,description,"
+                  f"short_description", "aic")
     if _aic_search_is_fallback(d):
         return []
     artworks = [a for a in _aic_relevant_search_records(d)
@@ -447,6 +473,10 @@ def aic(query, need, cue=None):
         out.append({"source": "aic", "source_id": str(a["id"]),
                     "title": a.get("title", ""), "artist": a.get("artist_display", ""),
                     "date": a.get("date_display", ""), "medium": a.get("medium_display", ""),
+                    "description": _description_text(
+                        a.get("description") or a.get("short_description")
+                        or thumbnail.get("alt_text")
+                    ),
                     "license": "PD/CC0",
                     "page_url": page_url,
                     "image_url": image_url,
@@ -548,6 +578,7 @@ def wellcome(query, need, cue=None):
             out.append({"source": "wellcome", "source_id": iid,
                         "title": src.get("title", ""), "artist": artist,
                         "date": date, "medium": medium,
+                        "description": _description_text(work.get("description")),
                         "license": str((((a.get("thumbnail") or {}).get("license")
                                          or {}).get("label") or "CC-BY/PD")),
                         "page_url": f"https://wellcomecollection.org/works/{src.get('id', '')}/images?id={iid}",
@@ -563,8 +594,29 @@ def wellcome(query, need, cue=None):
 def vam(query, need, cue=None):
     d = _get_json(f"https://api.vam.ac.uk/v2/objects/search?q={_q(query)}"
                   f"&images_exist=1&page_size={need * 2}", "vam")
+    records = (d or {}).get("records", [])
+    detail_count = min(need, len(records))
+    system_numbers = [
+        str(a.get("systemNumber") or "") for a in records[:detail_count]
+    ]
+
+    def fetch_record(system_number):
+        if not system_number:
+            return {}
+        detail = _get_json(
+            "https://api.vam.ac.uk/v2/object/" + urllib.parse.quote(system_number),
+            "vam_objects",
+        ) or {}
+        return detail.get("record") or {}
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(6, len(system_numbers) or 1)
+    ) as pool:
+        details = list(pool.map(fetch_record, system_numbers))
+    details.extend({} for _ in records[detail_count:])
+
     out = []
-    for a in (d or {}).get("records", []):
+    for a, detail in zip(records, details):
         try:
             iiif = a.get("_images", {}).get("_iiif_image_base_url", "")
             if not iiif:
@@ -573,6 +625,12 @@ def vam(query, need, cue=None):
                         "title": a.get("_primaryTitle", "") or a.get("objectType", ""),
                         "artist": (a.get("_primaryMaker") or {}).get("name", ""),
                         "date": a.get("_primaryDate", ""), "medium": a.get("objectType", ""),
+                        "description": _description_text(
+                            detail.get("summaryDescription")
+                            or detail.get("contentDescription")
+                            or detail.get("physicalDescription")
+                            or detail.get("briefDescription")
+                        ),
                         "license": "unknown",
                         "page_url": f"https://collections.vam.ac.uk/item/{a.get('systemNumber', '')}",
                         "image_url": f"{iiif}full/full/0/default.jpg",
@@ -668,6 +726,32 @@ def _rijks_notation_en(obj):
             return n.get("@value", "")
     return ((obj.get("notation") or [{}])[0]).get("@value", "")
 
+
+def _rijks_description(obj):
+    """Extract an English display description from Rijks Linked Art text."""
+    candidates = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            content = _description_text(value.get("content"))
+            classifications = json.dumps(value.get("classified_as") or []).lower()
+            if content and any(marker in classifications for marker in (
+                "300435416",  # Linked Art Description
+                "300048722",  # Rijks display/gallery text
+            )):
+                languages = json.dumps(value.get("language") or []).lower()
+                candidates.append(("300388277" not in languages, content))
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(obj.get("subject_of") or [])
+    walk(obj.get("referred_to_by") or [])
+    candidates.sort(key=lambda candidate: candidate[0])
+    return candidates[0][1] if candidates else ""
+
 def rijksmuseum(query, need, cue=None):
     out = []
     for param in ("description", "title"):
@@ -708,6 +792,7 @@ def rijksmuseum(query, need, cue=None):
                             "artist": artist,
                             "date": _rijks_en((prod.get("timespan") or {}).get("identified_by")),
                             "medium": "", "license": lic,
+                            "description": _rijks_description(o),
                             "page_url": f"https://www.rijksmuseum.nl/en/collection/{objnum}"
                                         if objnum else it["id"],
                             "image_url": f"{base}/full/max/0/default.jpg",
@@ -805,6 +890,7 @@ def _gnosis_live(query, need, cue=None):
                         "title": _html.unescape((m.get("title") or {}).get("rendered", "")),
                         "artist": artist, "date": artwork_date,
                         "medium": " · ".join(filter(None, [english[:500], cap[:160]])),
+                        "description": " · ".join(filter(None, [english, cap])),
                         "license": "house (gnosisvn.org)",
                         "page_url": m.get("link", ""),
                         "image_url": m.get("source_url", ""),
@@ -848,6 +934,10 @@ def europeana(query, need, cue=None):
                         "artist": (a.get("dcCreator") or [""])[0],
                         "date": str((a.get("year") or [""])[0]),
                         "medium": (a.get("dataProvider") or [""])[0],
+                        "description": _description_text(
+                            a.get("dcDescriptionLangAware")
+                            or a.get("dcDescription")
+                        ),
                         "license": lic,
                         "page_url": (a.get("edmIsShownAt") or [""])[0]
                                     or f'https://www.europeana.eu/item{a.get("id", "")}',

@@ -561,6 +561,78 @@ class BatchTests(unittest.TestCase):
             keys.get_key = original_get_key
             sources._get_json = original_get_json
 
+    def test_europeana_preserves_english_description(self):
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+        keys.get_key = lambda name: "test-key"
+        sources._get_json = lambda *args, **kwargs: {"items": [{
+            "id": "/item/1", "title": ["Work"],
+            "edmIsShownBy": ["https://images.test/work.jpg"],
+            "rights": ["http://creativecommons.org/publicdomain/mark/1.0/"],
+            "dcDescriptionLangAware": {
+                "de": ["Deutsche Beschreibung"],
+                "en": ["An angel approaches a seated woman."],
+            },
+        }]}
+        try:
+            item = sources.europeana("angel", 1)[0]
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
+        self.assertEqual(item["description"], "An angel approaches a seated woman.")
+
+    def test_cleveland_preserves_curatorial_description(self):
+        response = {"data": [{
+            "id": 1, "title": "Work", "share_license_status": "CC0",
+            "description": "<p>A figure emerges from a dark interior.</p>",
+            "images": {"web": {"url": "https://images.test/work.jpg"}},
+        }]}
+        original = sources._get_json
+        sources._get_json = lambda *args, **kwargs: response
+        try:
+            item = sources.cleveland("figure", 1)[0]
+        finally:
+            sources._get_json = original
+        self.assertEqual(item["description"], "A figure emerges from a dark interior.")
+
+    def test_vam_fetches_object_summary_description(self):
+        search_response = {"records": [{
+            "systemNumber": "O1", "_primaryTitle": "Relief",
+            "objectType": "Sculpture",
+            "_images": {"_iiif_image_base_url": "https://iiif.test/O1/"},
+        }]}
+        detail_response = {"record": {
+            "summaryDescription": "<p>A carved figure from a winged altarpiece.</p>",
+        }}
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: (
+            detail_response if "/v2/object/" in url else search_response
+        )
+        try:
+            item = sources.vam("relief", 1)[0]
+        finally:
+            sources._get_json = original
+        self.assertEqual(
+            item["description"], "A carved figure from a winged altarpiece."
+        )
+
+    def test_rijksmuseum_extracts_english_display_description(self):
+        record = {"subject_of": [{
+            "type": "LinguisticObject",
+            "language": [{"id": "http://vocab.getty.edu/aat/300388277"}],
+            "part": [{
+                "type": "LinguisticObject",
+                "content": "A procession crosses the town square.",
+                "classified_as": [{
+                    "id": "http://vocab.getty.edu/aat/300048722",
+                }],
+            }],
+        }]}
+        self.assertEqual(
+            sources._rijks_description(record),
+            "A procession crosses the town square.",
+        )
+
     def test_wellcome_enriches_images_with_work_artist_and_date(self):
         image_response = {"results": [{
             "id": "image-1",
@@ -572,6 +644,7 @@ class BatchTests(unittest.TestCase):
         }]}
         work_response = {
             "id": "work-1",
+            "description": "A physician demonstrates the instrument to a patient.",
             "contributors": [{
                 "primary": True,
                 "agent": {"label": "Primary Artist"},
@@ -596,6 +669,10 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(item["artist"], "Primary Artist; Printmaker")
         self.assertEqual(item["date"], "about 1781")
         self.assertEqual(item["medium"], "1 etching")
+        self.assertEqual(
+            item["description"],
+            "A physician demonstrates the instrument to a patient.",
+        )
         self.assertEqual(item["license"], "Public Domain Mark")
 
     def test_encrypted_credentials_round_trip_from_separate_files(self):
@@ -637,6 +714,15 @@ class BatchTests(unittest.TestCase):
                 "carried_out_by": [{"_label": "Example Artist"}],
                 "timespan": {"_label": "1650"},
             },
+            "referred_to_by": [{
+                "type": "LinguisticObject",
+                "content": "A richly dressed sitter stands beside a table.",
+                "classified_as": [{
+                    "id": "http://vocab.getty.edu/aat/300435416",
+                    "_label": "Description",
+                }],
+                "language": [{"id": "http://vocab.getty.edu/aat/300388277"}],
+            }],
             "representation": [{
                 "digitally_shown_by": [{
                     "type": "DigitalObject", "format": "image/jpeg",
@@ -653,6 +739,10 @@ class BatchTests(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(item["artist"], "Example Artist")
         self.assertEqual(item["medium"], "Painting")
+        self.assertEqual(
+            item["description"],
+            "A richly dressed sitter stands beside a table.",
+        )
         self.assertEqual(
             item["image_url"],
             "https://images.collections.yale.edu/iiif/2/example/"
@@ -713,6 +803,23 @@ class BatchTests(unittest.TestCase):
             item["image_url"],
             "https://apicollections.parismusees.paris.fr/sites/default/"
             "files/2020-01/monet.webp",
+        )
+
+    def test_paris_detail_parser_combines_iconographic_and_historical_text(self):
+        document = '''
+        <div class="field field-name-field-oeuvre-description-icono">
+          <div class="field-label">Description iconographique:</div>
+          <div class="field-item"><p>A sunset reflects across the Seine.</p></div>
+        </div>
+        <div class="field field-name-field-commentaire-historique">
+          <div class="field-label">Commentaire historique:</div>
+          <div class="field-item"><p>Monet painted the thaw near Lavacourt.</p></div>
+        </div>
+        '''
+        self.assertEqual(
+            additional_sources.parse_paris_musees_detail_page(document),
+            "A sunset reflects across the Seine.\n\n"
+            "Monet painted the thaw near Lavacourt.",
         )
 
     def test_museum_commons_requires_structured_filters_and_reusable_license(self):
@@ -1015,10 +1122,23 @@ class BatchTests(unittest.TestCase):
             "https://www.getty.edu/art/collection/object/103JNH",
         )
 
+    def test_getty_detail_parser_reads_structured_artwork_description(self):
+        document = '''
+        <meta name="description" content="Generic collection page">
+        <script type="application/ld+json">
+          {"name":"Irises","description":"Van Gogh painted the irises from nature in the asylum garden."}
+        </script>
+        '''
+        self.assertEqual(
+            additional_sources.parse_getty_detail_page(document),
+            "Van Gogh painted the irises from nature in the asylum garden.",
+        )
+
     def test_loc_parser_uses_largest_derivative_and_rights_statement(self):
         payload = {"results": [{
             "digitized": True, "access_restricted": False,
             "id": "http://www.loc.gov/item/123/", "title": "Historic view",
+            "description": ["A crowd gathers outside the station."],
             "url": "http://www.loc.gov/item/123/",
             "image_url": [
                 "https://tile.loc.gov/example-small.jpg#h=300&w=400",
@@ -1033,6 +1153,7 @@ class BatchTests(unittest.TestCase):
         item = additional_sources.parse_loc_response(payload, 10)[0]
         self.assertEqual((item["width"], item["height"]), (1800, 1200))
         self.assertEqual(item["license"], "No known restrictions")
+        self.assertEqual(item["description"], "A crowd gathers outside the station.")
         normalized = server.normalize_result(item)
         self.assertEqual(normalized["preview_click_action"], "visit_website")
         self.assertEqual(normalized["preview_click_url"], "https://www.loc.gov/item/123/")
@@ -1040,6 +1161,7 @@ class BatchTests(unittest.TestCase):
     def test_harvard_parser_excludes_restricted_images_and_builds_iiif_urls(self):
         payload = {"records": [{
             "objectid": 42, "title": "Open work", "dated": "17th century",
+            "description": "<p>A saint reads beside an open window.</p>",
             "classification": "Prints", "imagepermissionlevel": 0,
             "url": "http://www.harvardartmuseums.org/collections/object/42",
             "people": [{"role": "Artist", "displayname": "An Artist"}],
@@ -1057,6 +1179,7 @@ class BatchTests(unittest.TestCase):
         items = additional_sources.parse_harvard_response(payload, 10)
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["artist"], "An Artist")
+        self.assertEqual(items[0]["description"], "A saint reads beside an open window.")
         self.assertEqual((items[0]["width"], items[0]["height"]), (2400, 1800))
         self.assertEqual(
             items[0]["image_url"],
@@ -1290,6 +1413,10 @@ class BatchTests(unittest.TestCase):
         finally:
             gnosis_fuzzy._load_records = original
         self.assertEqual(typo[0]["source_id"], "7")
+        self.assertEqual(
+            typo[0]["description"],
+            "A Buddhist teacher meditating beneath a sacred tree",
+        )
         self.assertEqual(vietnamese[0]["source_id"], "7")
 
     def test_gnosis_uses_live_wordpress_before_local_index(self):
@@ -1329,6 +1456,7 @@ class BatchTests(unittest.TestCase):
             sources._get_json = original
         self.assertFalse(calls[0][1]["ttl_ok"])
         self.assertIn("escape", item["medium"])
+        self.assertIn("The Liberation of St. Peter", item["description"])
         self.assertEqual((item["width"], item["height"]), (3840, 2673))
 
     def test_aic_uses_api_dimensions_cached_iiif_sizes_and_placeholder(self):
@@ -1336,6 +1464,7 @@ class BatchTests(unittest.TestCase):
             "config": {"iiif_url": "https://images.example/iiif/2"},
             "data": [{
                 "id": 42, "title": "Tall work", "image_id": "abc",
+                "description": "<p>A towering figure fills the narrow canvas.</p>",
                 "is_public_domain": True,
                 "thumbnail": {"width": 1000, "height": 2000, "lqip": "data:image/gif;base64,x"},
             }],
@@ -1357,6 +1486,7 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(item["image_url"],
                          "https://commons.wikimedia.org/wiki/Special:FilePath/Tall%20work.jpg")
         self.assertEqual((item["width"], item["height"]), (1000, 2000))
+        self.assertEqual(item["description"], "A towering figure fills the narrow canvas.")
         self.assertTrue(item["placeholder_url"].startswith("data:image/gif"))
 
     def test_aic_discards_near_zero_score_match_all_fallback(self):

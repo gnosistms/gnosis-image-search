@@ -181,6 +181,66 @@ class _UniversalComasonryIndexParser(HTMLParser):
             self.in_heading = False
 
 
+class _JsonLdParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_json_ld = False
+        self.current: list[str] = []
+        self.payloads: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        values = {str(name).lower(): str(value or "") for name, value in attrs}
+        if tag.lower() == "script" and "ld+json" in values.get("type", "").lower():
+            self.in_json_ld = True
+            self.current = []
+
+    def handle_data(self, data: str):
+        if self.in_json_ld:
+            self.current.append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "script" and self.in_json_ld:
+            self.payloads.append("".join(self.current))
+            self.in_json_ld = False
+            self.current = []
+
+
+class _ParisMuseesDescriptionParser(HTMLParser):
+    TARGETS = frozenset((
+        "field-name-field-oeuvre-description-icono",
+        "field-name-field-commentaire-historique",
+    ))
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.current = ""
+        self.depth = 0
+        self.sections: dict[str, list[str]] = {}
+
+    def handle_starttag(self, tag: str, attrs):
+        if tag.lower() != "div":
+            return
+        values = {str(name).lower(): str(value or "") for name, value in attrs}
+        classes = set(values.get("class", "").split())
+        target = next((name for name in self.TARGETS if name in classes), "")
+        if not self.current and target:
+            self.current = target
+            self.depth = 1
+            self.sections.setdefault(target, [])
+        elif self.current:
+            self.depth += 1
+
+    def handle_data(self, data: str):
+        if self.current:
+            self.sections[self.current].append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "div" and self.current:
+            self.depth -= 1
+            if self.depth <= 0:
+                self.current = ""
+
+
 def parse_universal_comasonry_gallery_index(document: str) -> list[tuple[str, str]]:
     parser = _UniversalComasonryIndexParser()
     parser.feed(document or "")
@@ -223,6 +283,42 @@ def parse_universal_comasonry_detail_page(document: str) -> str:
     parser = _UniversalComasonryDetailParser()
     parser.feed(document or "")
     return " ".join("".join(parser.description).split())
+
+
+def parse_getty_detail_page(document: str) -> str:
+    """Extract Getty's structured artwork essay from its public object page."""
+    parser = _JsonLdParser()
+    parser.feed(document)
+    descriptions = []
+    for payload in parser.payloads:
+        try:
+            data = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        for node in _walk_dicts(data):
+            description = _clean_description(node.get("description"))
+            if description:
+                descriptions.append(description)
+    return max(descriptions, key=len, default="")
+
+
+def parse_paris_musees_detail_page(document: str) -> str:
+    """Extract iconographic and historical descriptions from an object page."""
+    parser = _ParisMuseesDescriptionParser()
+    parser.feed(document)
+    sections = []
+    for name in (
+        "field-name-field-oeuvre-description-icono",
+        "field-name-field-commentaire-historique",
+    ):
+        text = " ".join("".join(parser.sections.get(name, [])).split())
+        text = re.sub(
+            r"^(?:Description iconographique|Commentaire historique)\s*:\s*",
+            "", text, flags=re.IGNORECASE,
+        )
+        if text:
+            sections.append(text)
+    return "\n\n".join(sections)
 
 
 def _universal_comasonry_fetch_text(url: str, timeout: int = 20) -> str:
@@ -427,6 +523,17 @@ def universal_comasonry(query: str, need: int, cue=None) -> list[dict]:
 def _clean_url(value: str) -> str:
     value = str(value or "").strip()
     return "https://" + value[7:] if value.startswith("http://") else value
+
+
+def _clean_description(value) -> str:
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            text = _clean_description(item)
+            if text:
+                return text
+        return ""
+    text = _HTML_TAG.sub(" ", str(value or ""))
+    return " ".join(html.unescape(text).split())
 
 
 def _as_int(value) -> int:
@@ -639,7 +746,21 @@ def getty(query: str, need: int, cue=None) -> list[dict]:
         "q": query, "from": 0, "size": min(max(need * 2, 20), 100),
         "open_content": "true", "images": "true", "is_standalone": "true",
     })
-    return parse_getty_response(sources._get_json(url, "getty") or {}, need)
+    items = parse_getty_response(sources._get_json(url, "getty") or {}, need)
+
+    def fetch_description(item):
+        try:
+            document = _universal_comasonry_fetch_text(item.get("page_url") or "")
+            return parse_getty_detail_page(document)
+        except (OSError, ValueError):
+            return ""
+
+    count = min(need, len(items))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, count or 1)) as pool:
+        descriptions = list(pool.map(fetch_description, items[:count]))
+    for item, description in zip(items, descriptions):
+        item["description"] = description
+    return items
 
 
 def _loc_image_candidate(value: str) -> tuple[int, int, str] | None:
@@ -691,6 +812,7 @@ def parse_loc_response(data: dict, need: int) -> list[dict]:
                 "artist": str(contributors[0] if contributors else ""),
                 "date": str(item.get("date") or record.get("date") or ""),
                 "medium": str(medium or ""), "license": license_name,
+                "description": _clean_description(record.get("description")),
                 "page_url": page_url, "image_url": image_url,
                 "thumb_url": thumb_url, "width": width, "height": height,
                 # Search responses generally expose a derivative; the item
@@ -754,6 +876,11 @@ def parse_harvard_response(data: dict, need: int) -> list[dict]:
                 "artist": str(artist or ""), "date": str(record.get("dated") or ""),
                 "medium": str(record.get("medium") or record.get("technique")
                               or record.get("classification") or ""),
+                "description": _clean_description(
+                    record.get("description") or record.get("labeltext")
+                    or record.get("commentary") or image.get("description")
+                    or image.get("alttext") or image.get("publiccaption")
+                ),
                 "license": copyright_name or "Rights not stated",
                 "page_url": _clean_url(record.get("url") or ""),
                 "image_url": f"{base}/full/full/0/default.jpg",
@@ -788,7 +915,7 @@ def harvard(query: str, need: int, cue=None) -> list[dict]:
     fields = ",".join((
         "objectid", "title", "people", "dated", "classification", "technique",
         "medium", "primaryimageurl", "images", "url", "copyright",
-        "imagepermissionlevel",
+        "imagepermissionlevel", "description", "labeltext", "commentary",
     ))
     url = "https://api.harvardartmuseums.org/object?" + urllib.parse.urlencode({
         "apikey": api_key, "keyword": query, "hasimage": 1,
@@ -816,6 +943,23 @@ def _first_entity_name(values) -> str:
         if name:
             return str(name)
     return ""
+
+
+def _linked_art_description(record: dict) -> str:
+    """Return an English Linked Art Description statement when present."""
+    candidates = []
+    statements = [record.get("referred_to_by") or [], record.get("shows") or []]
+    for node in _walk_dicts(statements):
+        content = _clean_description(node.get("content"))
+        classifications = json.dumps(node.get("classified_as") or []).casefold()
+        if not content or not (
+            "300435416" in classifications or "description" in classifications
+        ):
+            continue
+        languages = json.dumps(node.get("language") or []).casefold()
+        candidates.append(("300388277" not in languages, content))
+    candidates.sort(key=lambda candidate: candidate[0])
+    return candidates[0][1] if candidates else ""
 
 
 def _linked_art_image(record: dict) -> tuple[str, str, int, int]:
@@ -872,6 +1016,7 @@ def parse_yale_record(record: dict) -> dict | None:
         "source": "yale", "source_id": data_url.rsplit("/", 1)[-1],
         "title": str(record.get("_label") or "Untitled"),
         "artist": artist, "date": date, "medium": medium,
+        "description": _linked_art_description(record),
         "license": "Reusable / public domain",
         "page_url": page_url, "image_url": image_url,
         "thumb_url": thumb_url, "width": width, "height": height,
@@ -1074,7 +1219,21 @@ def paris_musees(query: str, need: int, cue=None) -> list[dict]:
         PARIS_MUSEES_GRAPHQL_URL, {"query": graphql},
         {"auth-token": token}, "paris_musees",
     )
-    return parse_paris_musees_response(data, need)
+    items = parse_paris_musees_response(data, need)
+
+    def fetch_description(item):
+        try:
+            document = _universal_comasonry_fetch_text(item.get("page_url") or "")
+            return parse_paris_musees_detail_page(document)
+        except (OSError, ValueError):
+            return ""
+
+    count = min(need, len(items))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, count or 1)) as pool:
+        descriptions = list(pool.map(fetch_description, items[:count]))
+    for item, description in zip(items, descriptions):
+        item["description"] = description
+    return items
 
 
 class NGACatalog:
