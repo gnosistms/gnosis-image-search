@@ -1,7 +1,7 @@
 {
   "name": "gnosis-image-search",
   "productName": "Gnosis Images",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Museum image search ranked by the PAMELA criterion model",
   "main": "electron/main.js",
   "author": "Hans",

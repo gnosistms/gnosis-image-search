@@ -11,6 +11,12 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
 WIDTH, HEIGHT = 658, 498
+BANNER_TEXT_SCALE = 1.5
+
+
+def banner_text_size(size: int, scale: int) -> int:
+    """Return a pixel size 150% larger for standard and Retina artwork."""
+    return round(size * BANNER_TEXT_SCALE * scale)
 
 
 def font(size: int, weight: str = "regular") -> ImageFont.FreeTypeFont:
@@ -76,8 +82,8 @@ def make_background(scale: int) -> Image.Image:
 
     # The app icon already appears in Finder below, so keep this banner focused
     # on a vertically centered wordmark and descriptor.
-    title_typeface = heading_font(31 * scale)
-    subtitle_typeface = font(14 * scale)
+    title_typeface = heading_font(banner_text_size(31, scale))
+    subtitle_typeface = font(banner_text_size(14, scale))
     title = "Gnosis Images"
     subtitle = "Advanced creative commons image search"
     gap = 7 * scale
