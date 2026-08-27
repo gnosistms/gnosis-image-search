@@ -453,6 +453,53 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(session.source_cancelled("met"))
         self.assertFalse(session.source_cancelled("nga"))
 
+    def test_provider_filter_hides_cached_results_and_restores_them(self):
+        session = server.create_session("light", ["met", "nga"])
+        met_item = server.normalize_result(result("met", "Light", "met-1"))
+        nga_item = server.normalize_result(result("nga", "Light", "nga-1"))
+        session.merge_batch({
+            "source": "met", "results": [met_item], "error": "",
+            "offset": 0, "count": 1, "exhausted": True,
+        })
+        session.merge_batch({
+            "source": "nga", "results": [nga_item], "error": "",
+            "offset": 0, "count": 1, "exhausted": True,
+        })
+
+        filtered = session.update_sources(["nga"])
+        self.assertEqual({item["source"] for item in filtered["results"]}, {"nga"})
+        self.assertEqual(len(session.all_results), 2)
+        self.assertEqual(session.source_states["met"]["fetched"], 1)
+        self.assertFalse(filtered["source_policy"]["met"]["selected"])
+
+        restored = session.update_sources(["met", "nga"])
+        self.assertEqual({item["source"] for item in restored["results"]}, {"met", "nga"})
+        self.assertEqual(session.source_states["met"]["fetched"], 1)
+
+    def test_newly_selected_provider_joins_existing_session(self):
+        session = server.create_session("light", ["met"])
+        snapshot = session.update_sources(["met", "nga"])
+        self.assertIn("nga", session.source_states)
+        self.assertTrue(snapshot["source_policy"]["nga"]["selected"])
+        self.assertTrue(snapshot["source_policy"]["nga"]["continue"])
+        self.assertEqual(snapshot["source_policy"]["nga"]["fetched"], 0)
+
+    def test_provider_change_rejects_late_results_from_superseded_stream(self):
+        session = server.create_session("light", ["met"])
+        stream_token, _sources = session.begin_stream()
+        late = server.normalize_result(result("met", "Late", "late-1"))
+        session.update_sources([])
+        with self.assertRaises(server.SearchCancelled):
+            session.merge_batch({
+                "source": "met", "results": [late], "error": "",
+                "offset": 0, "count": 1, "exhausted": True,
+            }, stream_token=stream_token)
+        self.assertEqual(session.all_results, {})
+
+    def test_empty_provider_update_is_not_treated_as_select_all(self):
+        self.assertEqual(server.parse_sources("", allow_empty=True), [])
+        self.assertEqual(server.parse_sources(""), list(server.DEFAULT_SELECTED))
+
     def test_provider_failure_is_isolated(self):
         def fail(query, limit):
             raise RuntimeError("provider unavailable")

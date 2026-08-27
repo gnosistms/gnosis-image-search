@@ -58,6 +58,10 @@ let currentResults = [];
 let currentSession = '';
 let currentRevision = -1;
 let currentSearchSequence = 0;
+let activeSearchQuery = '';
+let activeSearchExact = false;
+let sourceSelectionRevision = 0;
+let sourceUpdateQueue = Promise.resolve();
 let selectedItemId = '';
 let detailImageRequest = 0;
 const galleryTiles = new Map();
@@ -190,13 +194,17 @@ function collectionLabel(source) {
 }
 
 function cancelPreviousSearch() {
-  for (const controller of searchControllers) controller.abort();
-  searchControllers.clear();
+  abortSearchStreams();
   if (currentSession) {
     fetch(`/api/search/cancel?session=${encodeURIComponent(currentSession)}`, {
       keepalive: true,
     }).catch(() => {});
   }
+}
+
+function abortSearchStreams() {
+  for (const controller of searchControllers) controller.abort();
+  searchControllers.clear();
 }
 
 async function loadSources() {
@@ -410,6 +418,7 @@ function setGallerySearching(searching) {
 
 function renderGallery(items) {
   currentResults = items;
+  gallery.querySelector('.notice')?.remove();
   if (items.length) setGallerySearching(false);
   const retained = new Set(items.map(item => item.id));
   for (const [id, tile] of galleryTiles) {
@@ -437,12 +446,14 @@ function applySnapshot(snapshot, sequence) {
   showSourceAlerts(snapshot.source_alerts);
   renderGallery(snapshot.results);
   if (selectedItemId) {
-    const selected = findItem(selectedItemId);
+    const selected = currentResults.find(item => item.id === selectedItemId);
     if (selected) renderDetailMetadata(selected);
+    else closeDetails();
   }
   const unavailable = Object.keys(snapshot.source_errors);
   const errors = unavailable.length;
-  const policies = Object.values(snapshot.source_policy || {});
+  const policies = Object.values(snapshot.source_policy || {})
+    .filter(policy => policy.selected !== false);
   const active = policies.filter(policy => policy.continue).length;
   const searched = policies.length - active;
   const resultText = snapshot.exact_active
@@ -520,12 +531,69 @@ async function streamSearchRound(sequence, sessionId) {
   }
 }
 
+async function continueSessionSearch(sequence, sessionId) {
+  let hasActiveSources = true;
+  while (hasActiveSources && sequence === currentSearchSequence) {
+    const snapshot = await streamSearchRound(sequence, sessionId);
+    if (!snapshot || sequence !== currentSearchSequence) return;
+    hasActiveSources = Object.values(snapshot.source_policy || {})
+      .some(policy => policy.selected !== false && policy.continue);
+  }
+  if (sequence === currentSearchSequence && currentResults.length === 0) {
+    setGallerySearching(false);
+    gallery.innerHTML = '<p class="notice">No matching images found.</p>';
+  }
+}
+
+async function updateSessionSources(sequence, sessionId, selected) {
+  const snapshot = await getJson(
+    `/api/search/sources?session=${encodeURIComponent(sessionId)}&sources=${encodeURIComponent(selected.join(','))}`
+  );
+  if (sequence !== currentSearchSequence || sessionId !== currentSession) return null;
+  applySnapshot(snapshot, sequence);
+  return snapshot;
+}
+
+function providerSelectionChanged() {
+  updateSourceCount();
+  if (!currentSession) return;
+  const changeRevision = ++sourceSelectionRevision;
+  sourceUpdateQueue = sourceUpdateQueue.catch(() => {}).then(async () => {
+    if (changeRevision !== sourceSelectionRevision || !currentSession) return;
+    const sequence = ++currentSearchSequence;
+    const sessionId = currentSession;
+    const selected = selectedSources();
+    abortSearchStreams();
+    setSearchBusy(true);
+    setGallerySearching(Boolean(selected.length && !currentResults.length));
+    try {
+      const snapshot = await updateSessionSources(sequence, sessionId, selected);
+      if (!snapshot || changeRevision !== sourceSelectionRevision) return;
+      if (selected.some(source => snapshot.source_policy?.[source]?.continue)) {
+        await continueSessionSearch(sequence, sessionId);
+      } else if (!selected.length && sequence === currentSearchSequence) {
+        setGallerySearching(false);
+        gallery.innerHTML = '<p class="notice">No collections selected.</p>';
+      }
+    } catch (error) {
+      if (sequence === currentSearchSequence) setPlainStatus(error.message);
+    } finally {
+      if (sequence === currentSearchSequence) setSearchBusy(false);
+    }
+  });
+}
+
 async function runSearch(query) {
   const selected = selectedSources();
   if (!selected.length) {
     setSourcePanelOpen(true);
     heroSourceCount.textContent = '· select at least one';
     setPlainStatus('Select at least one collection.');
+    return;
+  }
+  if (currentSession && query === activeSearchQuery
+      && exactPhrasesRequested === activeSearchExact) {
+    providerSelectionChanged();
     return;
   }
   queryInput.value = query;
@@ -539,6 +607,8 @@ async function runSearch(query) {
   cancelPreviousSearch();
   currentResults = [];
   currentSession = '';
+  activeSearchQuery = query;
+  activeSearchExact = exactPhrasesRequested;
   currentRevision = -1;
   selectedItemId = '';
   panelItems.clear();
@@ -558,17 +628,12 @@ async function runSearch(query) {
     currentSession = start.session_id;
     const sessionId = start.session_id;
     applySnapshot(start, sequence);
-    let hasActiveSources = true;
-    while (hasActiveSources && sequence === currentSearchSequence) {
-      const snapshot = await streamSearchRound(sequence, sessionId);
-      if (!snapshot || sequence !== currentSearchSequence) return;
-      hasActiveSources = Object.values(snapshot.source_policy || {})
-        .some(policy => policy.continue);
+    const latestSelected = selectedSources();
+    if (latestSelected.join(',') !== selected.join(',')) {
+      const snapshot = await updateSessionSources(sequence, sessionId, latestSelected);
+      if (!snapshot) return;
     }
-    if (sequence === currentSearchSequence && currentResults.length === 0) {
-      setGallerySearching(false);
-      gallery.innerHTML = '<p class="notice">No matching images found.</p>';
-    }
+    await continueSessionSearch(sequence, sessionId);
   } catch (error) {
     if (sequence === currentSearchSequence) {
       setGallerySearching(false);
@@ -808,13 +873,19 @@ document.addEventListener('pointerdown', event => {
 });
 document.querySelector('#select-all').addEventListener('click', () => {
   sourceOptions.querySelectorAll('input').forEach(input => { input.checked = true; });
-  updateSourceCount();
+  providerSelectionChanged();
 });
 document.querySelector('#select-none').addEventListener('click', () => {
   sourceOptions.querySelectorAll('input').forEach(input => { input.checked = false; });
-  updateSourceCount();
+  providerSelectionChanged();
 });
-sourceOptions.addEventListener('change', updateSourceCount);
+document.querySelector('#invert-sources').addEventListener('click', () => {
+  sourceOptions.querySelectorAll('input').forEach(input => {
+    input.checked = !input.checked;
+  });
+  providerSelectionChanged();
+});
+sourceOptions.addEventListener('change', providerSelectionChanged);
 window.addEventListener('resize', syncSourcePanelDragExclusion);
 closeDeveloperWarning.addEventListener('click', () => developerWarning.close());
 document.querySelector('#close-panel').addEventListener('click', closeDetails);

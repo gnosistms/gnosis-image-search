@@ -414,10 +414,10 @@ def validate_limit(value: str | int | None) -> int:
     return limit
 
 
-def parse_sources(value: str | None) -> list[str]:
+def parse_sources(value: str | None, allow_empty: bool = False) -> list[str]:
     requested = [part.strip() for part in (value or "").split(",") if part.strip()]
     if not requested:
-        return list(DEFAULT_SELECTED)
+        return [] if allow_empty else list(DEFAULT_SELECTED)
     unknown = [name for name in requested if name not in SOURCE_LABELS]
     if unknown:
         raise InputError(f"Unknown source: {unknown[0]}")
@@ -807,17 +807,22 @@ def stream_search_round(
     batch_search: Callable = search_batch,
 ):
     """Stream independent per-collection pipelines plus background enrichment."""
+    stream_token, stream_sources = session.begin_stream()
+    if not stream_sources:
+        yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
+        return
     search_executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=len(session.selected_sources),
+        max_workers=len(stream_sources),
     )
     enrichment_executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=min(4, len(session.selected_sources)),
+        max_workers=min(4, len(stream_sources)),
     )
     work = {}
 
     def submit_search(source_name: str):
         policy = session.continuation_policy()[source_name]
-        if not policy["continue"] or session.source_cancelled(source_name):
+        if (not policy["continue"]
+                or session.source_cancelled(source_name, stream_token)):
             return
         state = session.source_states[source_name]
         batch_size = (
@@ -826,7 +831,9 @@ def stream_search_round(
             else BATCH_SIZE
         )
         search_kwargs = {
-            "cancelled": lambda name=source_name: session.source_cancelled(name),
+            "cancelled": lambda name=source_name: session.source_cancelled(
+                name, stream_token,
+            ),
             "resolve_dimensions": False,
         }
         if session.exact_phrases:
@@ -852,7 +859,7 @@ def stream_search_round(
         future = enrichment_executor.submit(score_search_results, session.query, items)
         work[future] = {"kind": "enrichment", "started": time.monotonic()}
 
-    for source_name in session.selected_sources:
+    for source_name in stream_sources:
         submit_search(source_name)
 
     try:
@@ -888,9 +895,13 @@ def stream_search_round(
                             f"{SOURCE_BATCH_TIMEOUT_SECONDS} seconds"
                         ),
                     }
-                    snapshot = session.merge_batch(
-                        group, coalesce_ranking=False, score_results=False,
-                    )
+                    try:
+                        snapshot = session.merge_batch(
+                            group, coalesce_ranking=False, score_results=False,
+                            stream_token=stream_token,
+                        )
+                    except SearchCancelled:
+                        continue
                     session.cancel_source(source_name)
                     future.cancel()
                     yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
@@ -915,6 +926,7 @@ def stream_search_round(
                     group = future.result()
                     snapshot = session.merge_batch(
                         group, coalesce_ranking=False, score_results=False,
+                        stream_token=stream_token,
                     )
                 except SearchCancelled:
                     continue
@@ -927,9 +939,13 @@ def stream_search_round(
                         "exhausted": True,
                         "error": f"{type(exc).__name__}: {exc}",
                     }
-                    snapshot = session.merge_batch(
-                        group, coalesce_ranking=False, score_results=False,
-                    )
+                    try:
+                        snapshot = session.merge_batch(
+                            group, coalesce_ranking=False, score_results=False,
+                            stream_token=stream_token,
+                        )
+                    except SearchCancelled:
+                        continue
 
                 # Start this collection's next retrieval before yielding or
                 # beginning its slower dimension/model enrichment.
@@ -937,7 +953,7 @@ def stream_search_round(
                 submit_enrichment(group["results"])
                 yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
 
-        if not session.cancelled:
+        if not session.cancelled and session.stream_current(stream_token):
             yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
     finally:
         search_executor.shutdown(wait=False, cancel_futures=True)
@@ -978,6 +994,7 @@ class SearchSession:
         self.source_cancel_events = {
             name: threading.Event() for name in selected_sources
         }
+        self.stream_generation = 0
         self.rank_dirty = False
         self.dirty_batches = 0
 
@@ -987,8 +1004,50 @@ class SearchSession:
     def cancel_source(self, source_name: str):
         self.source_cancel_events[source_name].set()
 
-    def source_cancelled(self, source_name: str) -> bool:
-        return self.cancelled or self.source_cancel_events[source_name].is_set()
+    def begin_stream(self) -> tuple[int, tuple[str, ...]]:
+        """Claim the session's current active providers for one streaming pass."""
+        with self.lock:
+            self.stream_generation += 1
+            return self.stream_generation, self.selected_sources
+
+    def stream_current(self, stream_token: int) -> bool:
+        with self.lock:
+            return stream_token == self.stream_generation
+
+    def source_cancelled(
+        self, source_name: str, stream_token: int | None = None,
+    ) -> bool:
+        with self.lock:
+            return (
+                self.cancelled
+                or source_name not in self.selected_sources
+                or self.source_cancel_events[source_name].is_set()
+                or (stream_token is not None and stream_token != self.stream_generation)
+            )
+
+    def update_sources(self, selected_sources: list[str]) -> dict:
+        """Change the visible providers without discarding any fetched results."""
+        selected = tuple(name for name in SOURCE_LABELS if name in selected_sources)
+        with self.lock:
+            previous = set(self.selected_sources)
+            active = set(selected)
+            self.stream_generation += 1
+            for name in active:
+                if name not in self.source_states:
+                    self.source_states[name] = {
+                        "fetched": 0, "last_ids": [], "exhausted": False,
+                        "stop_reason": "", "rounds": 0, "last_batch_count": 0,
+                    }
+                    self.source_cancel_events[name] = threading.Event()
+                elif name not in previous:
+                    self.source_cancel_events[name].clear()
+            for name in previous - active:
+                self.source_cancel_events[name].set()
+            self.selected_sources = selected
+            self.rank_dirty = True
+            self.dirty_batches += 1
+            self._rerank_locked(force=True)
+            return self.snapshot()
 
     @property
     def cancelled(self) -> bool:
@@ -1000,7 +1059,10 @@ class SearchSession:
         if not force and self.revision and self.dirty_batches < RANK_AFTER_DIRTY_BATCHES:
             return
         ranked, families = rank_result_groups(
-            self.query, list(self.all_results.values()),
+            self.query, [
+                item for item in self.all_results.values()
+                if item.get("source") in self.selected_sources
+            ],
             same_image=lambda first, second: likely_same_image(
                 first, second, image_similarity(first, second)
             ),
@@ -1020,9 +1082,10 @@ class SearchSession:
         group: dict,
         coalesce_ranking: bool = False,
         score_results: bool = True,
+        stream_token: int | None = None,
     ) -> dict:
         source_name = group["source"]
-        if self.source_cancelled(source_name):
+        if self.source_cancelled(source_name, stream_token):
             raise SearchCancelled("Search was superseded by a newer request.")
         with self.lock:
             state = self.source_states[source_name]
@@ -1031,7 +1094,7 @@ class SearchSession:
         incoming = list(group["results"])
         if score_results:
             incoming = score_search_results(self.query, incoming)
-        if self.source_cancelled(source_name):
+        if self.source_cancelled(source_name, stream_token):
             raise SearchCancelled("Search was superseded by a newer request.")
         with self.lock:
             state = self.source_states[source_name]
@@ -1108,6 +1171,7 @@ class SearchSession:
             positions = {item_id: index + 1 for index, item_id in enumerate(self.results)}
             policy = {}
             for name, state in self.source_states.items():
+                selected = name in self.selected_sources
                 latest_representatives = {
                     self.family_by_id.get(item_id, item_id) for item_id in state["last_ids"]
                 }
@@ -1115,7 +1179,9 @@ class SearchSession:
                                     if item_id in positions]
                 top_hits = sum(position <= AGGREGATE_QUALITY_WINDOW
                                for position in latest_positions)
-                if state["rounds"] == 0 and not state["stop_reason"]:
+                if not selected:
+                    should_continue, reason = False, "collection hidden"
+                elif state["rounds"] == 0 and not state["stop_reason"]:
                     should_continue, reason = True, "awaiting first batch"
                 elif state["stop_reason"]:
                     should_continue, reason = False, state["stop_reason"]
@@ -1137,6 +1203,7 @@ class SearchSession:
                     )
                 policy[name] = {
                     "continue": should_continue,
+                    "selected": selected,
                     "reason": reason,
                     "fetched": state["fetched"],
                     "top_50_hits": top_hits,
@@ -1156,8 +1223,14 @@ class SearchSession:
                 "ranking_mode": self.ranking_mode,
                 "revision": self.revision,
                 "results": list(self.results.values()),
-                "source_errors": dict(self.source_errors),
-                "source_alerts": copy.deepcopy(self.source_alerts),
+                "source_errors": {
+                    name: error for name, error in self.source_errors.items()
+                    if name in self.selected_sources
+                },
+                "source_alerts": copy.deepcopy({
+                    name: alert for name, alert in self.source_alerts.items()
+                    if name in self.selected_sources
+                }),
                 "selected_count": len(self.selected_sources),
                 "source_policy": self.continuation_policy(),
             }
@@ -1623,6 +1696,12 @@ class SearchHandler(BaseHTTPRequestHandler):
                 exact_requested = parse_bool((params.get("exact") or [""])[0])
                 session = create_session(query, selected, exact_requested)
                 self.send_json(200, session.snapshot())
+            elif url.path == "/api/search/sources":
+                session = get_session((params.get("session") or [""])[0])
+                selected = parse_sources(
+                    (params.get("sources") or [""])[0], allow_empty=True,
+                )
+                self.send_json(200, session.update_sources(selected))
             elif url.path == "/api/search/source":
                 session = get_session((params.get("session") or [""])[0])
                 if session.cancelled:
