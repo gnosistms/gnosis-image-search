@@ -11,7 +11,9 @@ function compatibleUpdateAsset(release, platform = process.platform, arch = proc
       && intendedPackage
       && extensions.some(extension => name.toLowerCase().endsWith(extension));
   });
-  return candidates.find(asset => architecture.test(asset.name)) || candidates[0] || null;
+  // Never offer an installer for the other CPU architecture. Rosetta only
+  // translates Intel apps on Apple Silicon, not Apple Silicon apps on Intel.
+  return candidates.find(asset => architecture.test(asset.name)) || null;
 }
 
 function compatibleModelAsset(release) {

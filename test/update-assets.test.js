@@ -15,6 +15,15 @@ test('macOS updater selects the model-free update DMG', () => {
     compatibleUpdateAsset(release, 'darwin', 'arm64').name,
     'Gnosis-Images-Update-1.2.0-arm64.dmg'
   );
+  assert.equal(
+    compatibleUpdateAsset(release, 'darwin', 'x64').name,
+    'Gnosis-Images-Update-1.2.0-x64.dmg'
+  );
+});
+
+test('macOS updater never falls back to the other CPU architecture', () => {
+  const release = { assets: [asset('Gnosis-Images-Update-1.2.0-arm64.dmg')] };
+  assert.equal(compatibleUpdateAsset(release, 'darwin', 'x64'), null);
 });
 
 test('updater never falls back to a full installer', () => {

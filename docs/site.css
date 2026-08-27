@@ -16,8 +16,8 @@ h1 { max-width:920px; margin:18px auto; font:600 clamp(44px,7vw,76px)/.98 Georgi
 .download:hover { background:#5d293b; transform:translateY(-1px); }
 .download.is-downloading { cursor:progress; background:#5d293b; }
 #platform-note,.privacy { margin:10px 0 0; color:var(--muted); font-size:13px; }
-#download-help { margin:8px 0 0; color:var(--muted); font-size:13px; }
-#download-help a { color:var(--wine); font-weight:650; }
+#download-help,#alternate-download { margin:8px 0 0; color:var(--muted); font-size:13px; }
+#download-help a,#alternate-download a { color:var(--wine); font-weight:650; }
 #download-help code { font:inherit; }
 .privacy { margin-top:25px; }
 .preview { overflow:hidden; background:#fff; border:1px solid #d7d0c6; border-radius:18px; box-shadow:0 28px 80px #40332624; }

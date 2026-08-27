@@ -42,6 +42,19 @@ test('update distribution is also model-free', () => {
   assert.equal(config.makers.some(maker => maker.name === '@electron-forge/maker-squirrel'), false);
 });
 
+test('Intel macOS distribution names its installer for x64', () => {
+  const config = distributionConfig('full', 'x64');
+  const dmg = config.makers.find(maker => maker.name === '@electron-forge/maker-dmg');
+  assert.match(dmg.config.name, /Gnosis-Images-Full-Installer-.*-x64/);
+});
+
+test('release workflow builds macOS natively for Apple Silicon and Intel', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8');
+  assert.match(workflow, /arch: arm64[\s\S]*runner: macos-15/);
+  assert.match(workflow, /arch: x64[\s\S]*runner: macos-15-intel/);
+  assert.match(workflow, /GNOSIS_TARGET_ARCH: \$\{\{ matrix\.arch \}\}/);
+});
+
 test('packager excludes development data using absolute paths', () => {
   const config = distributionConfig('update', 'x64');
   const ignored = filePath => config.packagerConfig.ignore.some(pattern => pattern.test(filePath));

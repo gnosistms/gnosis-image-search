@@ -3,6 +3,7 @@ const button = document.querySelector('#download');
 const note = document.querySelector('#platform-note');
 const help = document.querySelector('#download-help');
 const fallback = document.querySelector('#download-fallback');
+const alternate = document.querySelector('#alternate-download');
 
 let download = null;
 let resetTimer = null;
@@ -23,8 +24,11 @@ async function configureDownload() {
     const release = await response.json();
     const assets = release.assets || [];
     const installers = assets.filter(item => /(?:^|[-_. ])(?:full[-_. ]?)?installer(?:[-_. ]|$)/i.test(item.name));
+    const compatibleInstallers = detected.name === 'macOS'
+      ? installers.filter(item => /arm64|aarch64/i.test(item.name))
+      : installers;
     const asset = detected.extensions
-      .map(extension => installers.find(item => item.name.toLowerCase().endsWith(extension)))
+      .map(extension => compatibleInstallers.find(item => item.name.toLowerCase().endsWith(extension)))
       .find(Boolean);
     if (asset) {
       download = {
@@ -38,6 +42,16 @@ async function configureDownload() {
       button.target = 'download-frame';
       fallback.href = release.html_url;
       note.textContent = `${download.version} · ${download.name} · ${download.size}`;
+      if (detected.name === 'macOS') {
+        const intel = installers.find(item => /x64|x86_64|amd64/i.test(item.name) && item.name.toLowerCase().endsWith('.dmg'));
+        if (intel) {
+          const link = document.createElement('a');
+          link.href = intel.browser_download_url;
+          link.textContent = 'Download for Intel Mac';
+          alternate.replaceChildren('Using an older Mac? ', link);
+          alternate.hidden = false;
+        }
+      }
     } else {
       button.href = release.html_url;
       button.textContent = 'View latest release';

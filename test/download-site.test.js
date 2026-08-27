@@ -17,6 +17,9 @@ function element() {
       this.listeners ||= {};
       this.listeners[type] = listener;
     },
+    replaceChildren(...children) {
+      this.children = children;
+    },
     removeAttribute(name) {
       delete this.attributes[name];
     },
@@ -31,18 +34,23 @@ test('macOS download starts without navigating the top-level page', async () => 
   const note = element();
   const help = { hidden: true };
   const fallback = element();
+  const alternate = element();
   let resetDownloadState;
   const elements = {
     '#download': button,
     '#download-fallback': fallback,
     '#download-help': help,
+    '#alternate-download': alternate,
     '#platform-note': note,
   };
   const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'download.js'), 'utf8');
 
   vm.runInNewContext(source, {
     clearTimeout() {},
-    document: { querySelector: selector => elements[selector] },
+    document: {
+      createElement: () => element(),
+      querySelector: selector => elements[selector],
+    },
     fetch: async () => ({
       json: async () => ({
         assets: [{
@@ -53,6 +61,10 @@ test('macOS download starts without navigating the top-level page', async () => 
           browser_download_url: 'https://example.test/Gnosis.Images.dmg',
           name: 'Gnosis-Images-Full-Installer-1.0.0-arm64.dmg',
           size: 529224507,
+        }, {
+          browser_download_url: 'https://example.test/Gnosis.Images.Intel.dmg',
+          name: 'Gnosis-Images-Full-Installer-1.0.0-x64.dmg',
+          size: 524288000,
         }],
         html_url: 'https://example.test/releases/v1',
         tag_name: 'v1.0.0',
@@ -70,6 +82,9 @@ test('macOS download starts without navigating the top-level page', async () => 
   assert.equal(button.href, 'https://example.test/Gnosis.Images.dmg');
   assert.equal(button.target, 'download-frame');
   assert.equal(button.textContent, 'Download for macOS');
+  assert.equal(alternate.hidden, false);
+  assert.equal(alternate.children[1].href, 'https://example.test/Gnosis.Images.Intel.dmg');
+  assert.equal(alternate.children[1].textContent, 'Download for Intel Mac');
   assert.equal(note.textContent, '1.0.0 · macOS · 505 MB');
 
   button.listeners.click({ preventDefault: () => assert.fail('first click should start the download') });
@@ -94,13 +109,17 @@ test('Windows download selects the single NSIS installer instead of an obsolete 
     '#download': button,
     '#download-fallback': element(),
     '#download-help': { hidden: true },
+    '#alternate-download': element(),
     '#platform-note': note,
   };
   const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'download.js'), 'utf8');
 
   vm.runInNewContext(source, {
     clearTimeout() {},
-    document: { querySelector: selector => elements[selector] },
+    document: {
+      createElement: () => element(),
+      querySelector: selector => elements[selector],
+    },
     fetch: async () => ({
       json: async () => ({
         assets: [{

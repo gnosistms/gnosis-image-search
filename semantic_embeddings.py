@@ -74,6 +74,7 @@ def _load_model() -> bool:
             return True
         try:
             import torch
+            import transformers
             from transformers.utils import logging as transformers_logging
             if MODEL_KIND == "siglip":
                 from transformers.models.siglip.modeling_siglip import SiglipModel
@@ -95,8 +96,9 @@ def _load_model() -> bool:
             processor = processor_class.from_pretrained(MODEL_SOURCE, **load_options)
             device = "mps" if torch.backends.mps.is_available() else "cpu"
             dtype = torch.float16 if device == "mps" else torch.float32
+            dtype_option = "dtype" if int(transformers.__version__.split(".", 1)[0]) >= 5 else "torch_dtype"
             model = model_class.from_pretrained(
-                MODEL_SOURCE, dtype=dtype, **load_options,
+                MODEL_SOURCE, **{dtype_option: dtype}, **load_options,
             ).to(device)
             model.eval()
             _MODEL, _PROCESSOR, _TORCH, _DEVICE = model, processor, torch, device
