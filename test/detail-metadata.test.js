@@ -9,7 +9,10 @@ test('detail panel displays artist and date independently of description', () =>
 
   assert.match(markup, /id="detail-artist"/);
   assert.match(markup, /id="detail-date"/);
+  assert.match(markup, /id="detail-match-context"/);
+  assert.match(markup, />Why this matched</);
   assert.match(script, /detailArtist\.textContent = item\.artist \|\| ''/);
   assert.match(script, /detailDate\.textContent = item\.date \|\| ''/);
   assert.match(script, /detailDescription\.textContent = item\.description/);
+  assert.match(script, /detailMatchContext\.textContent = hasEvidence/);
 });

@@ -42,7 +42,7 @@ class StaticFileTests(unittest.TestCase):
     def test_hero_artwork_is_served_as_jpeg(self):
         artwork = (
             "annunciation-1390.jpg",
-            "annunciation-1660.jpg",
+            "flight-into-egypt.jpg",
             "madonna-and-child-with-musical-angels.jpg",
             "adoration-of-the-magi.jpg",
         )
@@ -75,6 +75,172 @@ def result(source, title="Result", source_id="1", **extra):
     }
     item.update(extra)
     return item
+
+
+class ExactPhraseTests(unittest.TestCase):
+    def test_normalization_exposes_bounded_query_bearing_search_text(self):
+        item = result(
+            "wellcome", "A vessel",
+            description="A generic catalog description.",
+            search_text=[
+                "Unrelated note.",
+                "The lettering identifies the Guardian of the Threshold.",
+            ],
+        )
+        normalized = server.normalize_result(
+            item, query="guardian of the threshold",
+        )
+        self.assertEqual(
+            normalized["match_context"],
+            "The lettering identifies the Guardian of the Threshold.",
+        )
+        self.assertIn("Provider metadata", normalized["matched_fields"])
+        self.assertNotIn("search_text", normalized)
+
+    def test_normalization_marks_provider_hit_without_visible_evidence(self):
+        normalized = server.normalize_result(
+            result("loc", "Unrelated record"), query="caduceus",
+        )
+        self.assertEqual(normalized["match_context"], "")
+        self.assertEqual(
+            normalized["match_evidence_status"],
+            "provider_returned_without_visible_evidence",
+        )
+
+    def test_normalization_keeps_narrative_and_match_evidence_separate(self):
+        normalized = server.normalize_result(result(
+            "aic", "Mary Magdalene",
+            description="A woman looks toward the viewer.",
+            search_text={"Controlled term": ["tree of life"]},
+        ), query="tree of life")
+        self.assertEqual(
+            normalized["description"], "A woman looks toward the viewer."
+        )
+        self.assertEqual(normalized["match_context"], "tree of life")
+        self.assertEqual(normalized["matched_fields"], ["Controlled Term"])
+
+    def test_toggle_treats_unquoted_query_as_one_phrase(self):
+        parsed = server.parse_search_query("Guardian of the Threshold", True)
+        self.assertEqual(parsed.retrieval, "Guardian of the Threshold")
+        self.assertEqual(parsed.exact_phrases, ("Guardian of the Threshold",))
+
+    def test_quotes_define_multiple_required_phrases_without_toggle(self):
+        parsed = server.parse_search_query('"text one" "text two"')
+        self.assertFalse(parsed.exact_requested)
+        self.assertEqual(parsed.retrieval, "text one text two")
+        self.assertEqual(parsed.exact_phrases, ("text one", "text two"))
+
+    def test_toggle_adds_unquoted_text_to_quoted_phrases(self):
+        parsed = server.parse_search_query('angel "holy spirit" wings', True)
+        self.assertEqual(parsed.exact_phrases, ("holy spirit", "angel wings"))
+
+    def test_unclosed_quote_is_rejected(self):
+        with self.assertRaisesRegex(server.InputError, "Close the quotation"):
+            server.parse_search_query('"guardian of the threshold')
+
+    def test_phrase_matching_ignores_case_punctuation_and_whitespace(self):
+        item = result(
+            "met", "Object", description="The GUARDIAN—of\n the   threshold waits.",
+        )
+        self.assertTrue(server.result_matches_exact_phrases(
+            item, ("guardian of the threshold",),
+        ))
+
+    def test_multiple_phrases_can_match_in_any_order_and_different_fields(self):
+        item = result(
+            "met", "Text Two", description="An example of text one here.",
+        )
+        self.assertTrue(server.result_matches_exact_phrases(
+            item, ("text one", "text two"),
+        ))
+
+    def test_phrase_matching_rejects_intervening_words_and_field_crossing(self):
+        self.assertFalse(server.result_matches_exact_phrases(
+            result("met", "Guardian", description="of the threshold"),
+            ("guardian of the threshold",),
+        ))
+        self.assertFalse(server.result_matches_exact_phrases(
+            result("met", "Guardian great of the threshold"),
+            ("guardian of the threshold",),
+        ))
+
+    def test_exact_batch_filters_candidates_before_paging(self):
+        candidates = [
+            result("met", "A guardian far from the threshold", "0"),
+            result("met", "Guardian of the Threshold", "1"),
+            result("met", "Copy: guardian—of the threshold", "2"),
+        ]
+        calls = []
+
+        def adapter(query, need):
+            calls.append((query, need))
+            return candidates
+
+        group = server.search_batch(
+            "met", "guardian of the threshold", 0, 1,
+            {"met": adapter}, resolve_dimensions=False,
+            exact_phrases=("guardian of the threshold",),
+        )
+        self.assertEqual(calls, [("guardian of the threshold", 40)])
+        self.assertEqual([item["source_id"] for item in group["results"]], ["1"])
+        self.assertTrue(group["exact_verified"])
+        self.assertTrue(group["exhausted"])
+
+    def test_rijksmuseum_compound_exact_search_intersects_phrase_results(self):
+        calls = []
+        candidates = {
+            "text one": [
+                result("rijksmuseum", "Text one and text two", "both"),
+                result("rijksmuseum", "Text one only", "first"),
+            ],
+            "text two": [
+                result("rijksmuseum", "Text one and text two", "both"),
+                result("rijksmuseum", "Text two only", "second"),
+            ],
+        }
+
+        def adapter(query, need):
+            calls.append((query, need))
+            return candidates[query]
+
+        group = server.search_batch(
+            "rijksmuseum", "text one text two", 0, 10,
+            {"rijksmuseum": adapter}, resolve_dimensions=False,
+            exact_phrases=("text one", "text two"),
+        )
+        self.assertEqual([query for query, _need in calls], ["text one", "text two"])
+        self.assertEqual([item["source_id"] for item in group["results"]], ["both"])
+
+    def test_wellcome_receives_the_exact_phrase_candidate_strategy(self):
+        calls = []
+
+        def adapter(query, need, *, exact_phrases=()):
+            calls.append((query, need, exact_phrases))
+            return [result(
+                "wellcome", "A vessel", "wellcome-exact",
+                search_text=["Guardian—of the threshold"],
+            )]
+
+        group = server.search_batch(
+            "wellcome", "guardian of the threshold", 0, 1,
+            {"wellcome": adapter}, resolve_dimensions=False,
+            exact_phrases=("guardian of the threshold",),
+        )
+        self.assertEqual(calls, [(
+            "guardian of the threshold", 40,
+            ("guardian of the threshold",),
+        )])
+        self.assertEqual(
+            [item["source_id"] for item in group["results"]],
+            ["wellcome-exact"],
+        )
+
+    def test_session_snapshot_exposes_exact_search_contract(self):
+        session = server.create_session('"text one" "text two"', ["met"])
+        snapshot = session.snapshot()
+        self.assertTrue(snapshot["exact_active"])
+        self.assertFalse(snapshot["exact_requested"])
+        self.assertEqual(snapshot["exact_phrases"], ["text one", "text two"])
 
 
 class RankingTests(unittest.TestCase):
@@ -123,6 +289,20 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(ranked[0]["duplicate_count"], 1)
         self.assertEqual({item["id"] for item in families[large["id"]]},
                          {small["id"], large["id"]})
+
+    def test_provider_primary_view_beats_larger_alternate_from_same_work(self):
+        front = server.normalize_result({
+            **result("wellcome", "A postcard", "front", width=1000, height=700),
+            "work_id": "work-1", "is_primary_view": True,
+        }, 1)
+        back = server.normalize_result({
+            **result("wellcome", "A postcard", "back", width=3000, height=2000),
+            "work_id": "work-1", "is_primary_view": False,
+        }, 0)
+        ranked, families = ranker.rank_result_groups("postcard", [back, front])
+        self.assertEqual(len(ranked), 1)
+        self.assertEqual(ranked[0]["source_id"], "front")
+        self.assertEqual(len(families[ranked[0]["id"]]), 2)
 
     def test_gnosis_variants_with_same_curated_description_are_collapsed(self):
         description = "A detailed curated description of the same historical image " * 3
@@ -406,6 +586,60 @@ class SessionTests(unittest.TestCase):
         with self.assertRaises(server.ImageProxyError):
             server.image_mime_type(b"not an image")
 
+    def test_harvard_proxy_recovers_from_transient_rate_limits(self):
+        jpeg = b"\xff\xd8\xff\xe0" + b"image"
+        image_calls = []
+        cookie_calls = []
+        sleeps = []
+        original_urlopen = server.urllib.request.urlopen
+        original_cookie = server.harvard_cookie
+        original_sleep = server.time.sleep
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, limit):
+                return jpeg
+
+        def urlopen(request, timeout):
+            image_calls.append(request.full_url)
+            if len(image_calls) < 3:
+                raise urllib.error.HTTPError(
+                    request.full_url, 429, "rate limited", {}, None,
+                )
+            return Response()
+
+        def cookie(page_url, force=False):
+            cookie_calls.append(force)
+            return "signed=cookie"
+
+        server.urllib.request.urlopen = urlopen
+        server.harvard_cookie = cookie
+        server.time.sleep = sleeps.append
+        try:
+            data, mime = server.fetch_harvard_preview({
+                "thumb_url": (
+                    "https://nrs.harvard.edu/urn-3:HUAM:ABC_dynmc/"
+                    "full/!1024,1024/0/default.jpg"
+                ),
+                "page_url": (
+                    "https://www.harvardartmuseums.org/collections/object/42"
+                ),
+            })
+        finally:
+            server.urllib.request.urlopen = original_urlopen
+            server.harvard_cookie = original_cookie
+            server.time.sleep = original_sleep
+
+        self.assertEqual((data, mime), (jpeg, "image/jpeg"))
+        self.assertEqual(len(image_calls), 3)
+        self.assertEqual(cookie_calls, [False, True, False])
+        self.assertEqual(sleeps, [0.5, 1.0])
+
 
 class BatchTests(unittest.TestCase):
     def test_met_does_not_fall_back_when_title_search_is_empty(self):
@@ -581,6 +815,116 @@ class BatchTests(unittest.TestCase):
             sources._get_json = original_get_json
         self.assertEqual(item["description"], "An angel approaches a seated woman.")
 
+    def test_europeana_excludes_pdf_misclassified_as_image(self):
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+        keys.get_key = lambda name: "test-key" if name == "europeana" else ""
+        sources._get_json = lambda *args, **kwargs: {"items": [{
+            "id": "/234/_nnRgRl3",
+            "title": ["Atlantis. Drama"],
+            "dataProvider": ["Silesian Digital Library"],
+            "edmIsShownBy": [
+                "https://sbc.org.pl/Content/253780/ii641596-0000-00-0001.pdf",
+            ],
+            "edmPreview": ["https://images.test/atlantis.jpg"],
+            "rights": ["http://creativecommons.org/publicdomain/mark/1.0/"],
+        }]}
+        try:
+            self.assertEqual(sources.europeana("Atlantis", 1), [])
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
+
+    def test_europeana_excludes_authoritative_nhm_register_media(self):
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+        asset_id = "7dd12720-fbc5-4959-a5ca-9f475c918d20"
+        search_item = {
+            "id": "/854/NHMUKXZOOX1951X2X17X197X226",
+            "title": ["Lucifer"],
+            "dataProvider": [
+                "The Trustees of the Natural History Museum, London",
+            ],
+            "edmIsShownBy": [f"https://data.nhm.ac.uk/media/{asset_id}"],
+            "rights": ["http://creativecommons.org/licenses/by/4.0/"],
+        }
+
+        def fake_get_json(url, _source, **_kwargs):
+            if "datastore_search" not in url:
+                return {"items": [search_item]}
+            return {"result": {"records": [{"associatedMedia": [{
+                "assetID": asset_id,
+                "title": "Zoology Accessions Register: page 101",
+                "category": "Register",
+                "type": "StillImage",
+            }]}]}}
+
+        keys.get_key = lambda name: "test-key" if name == "europeana" else ""
+        sources._get_json = fake_get_json
+        try:
+            self.assertEqual(sources.europeana("Lucifer", 1), [])
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
+
+    def test_europeana_keeps_nhm_specimen_media(self):
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+        asset_id = "90ed46e5-d649-43c5-8e7b-8a9a1d12c108"
+        search_item = {
+            "id": "/883/NHMUKXZOOXTEST",
+            "title": ["Euzetes globulus Nicolet, 1855"],
+            "dataProvider": [
+                "The Trustees of the Natural History Museum, London",
+            ],
+            "edmIsShownBy": [f"https://data.nhm.ac.uk/media/{asset_id}"],
+            "rights": ["http://creativecommons.org/licenses/by/4.0/"],
+        }
+
+        def fake_get_json(url, _source, **_kwargs):
+            if "datastore_search" not in url:
+                return {"items": [search_item]}
+            return {"result": {"records": [{"associatedMedia": [{
+                "assetID": asset_id,
+                "category": "Specimen",
+                "type": "StillImage",
+            }]}]}}
+
+        keys.get_key = lambda name: "test-key" if name == "europeana" else ""
+        sources._get_json = fake_get_json
+        try:
+            items = sources.europeana("mite", 1)
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["title"], "Euzetes globulus Nicolet, 1855")
+
+    def test_europeana_keeps_nhm_media_when_category_lookup_fails(self):
+        original_get_key = keys.get_key
+        original_get_json = sources._get_json
+        asset_id = "90ed46e5-d649-43c5-8e7b-8a9a1d12c108"
+        search_item = {
+            "id": "/883/NHMUKXZOOXTEST",
+            "title": ["Specimen"],
+            "dataProvider": [
+                "The Trustees of the Natural History Museum, London",
+            ],
+            "edmIsShownBy": [f"https://data.nhm.ac.uk/media/{asset_id}"],
+        }
+
+        def fake_get_json(url, _source, **_kwargs):
+            return None if "datastore_search" in url else {"items": [search_item]}
+
+        keys.get_key = lambda name: "test-key" if name == "europeana" else ""
+        sources._get_json = fake_get_json
+        try:
+            items = sources.europeana("specimen", 1)
+        finally:
+            keys.get_key = original_get_key
+            sources._get_json = original_get_json
+        self.assertEqual(len(items), 1)
+
     def test_cleveland_preserves_curatorial_description(self):
         response = {"data": [{
             "id": 1, "title": "Work", "share_license_status": "CC0",
@@ -594,6 +938,108 @@ class BatchTests(unittest.TestCase):
         finally:
             sources._get_json = original
         self.assertEqual(item["description"], "A figure emerges from a dark interior.")
+
+    def test_cleveland_quoted_query_is_locally_phrase_filtered(self):
+        response = {"info": {"total": 3}, "data": [
+            {
+                "id": 1, "title": "Tea and Coffee Service",
+                "description": "The tea and service pieces are displayed together.",
+                "images": {"web": {"url": "https://images.test/false.jpg"}},
+            },
+            {
+                "id": 2, "title": "Tea Service",
+                "images": {"web": {"url": "https://images.test/title.jpg"}},
+            },
+            {
+                "id": 3, "title": "Vessel",
+                "description": "An elaborate TEA\u00a0\n service for a household.",
+                "images": {"web": {"url": "https://images.test/description.jpg"}},
+            },
+        ]}
+        urls = []
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: (
+            urls.append(url) or response
+        )
+        try:
+            items = sources.cleveland('"tea service"', 10)
+        finally:
+            sources._get_json = original
+        self.assertEqual([item["source_id"] for item in items], ["2", "3"])
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(urls[0]).query)
+        self.assertEqual(params["q"], ["tea service"])
+        self.assertEqual(params["limit"], ["1000"])
+        self.assertEqual(params["smart_parts"], ["1"])
+
+    def test_cleveland_exact_phrase_does_not_cross_metadata_fields(self):
+        artwork = {"title": "Tea", "description": "Service for six."}
+        self.assertFalse(sources._cleveland_has_exact_phrase(
+            artwork, "tea service",
+        ))
+
+    def test_cleveland_exact_phrase_ignores_punctuation_space_and_case(self):
+        artwork = {"title": "A TEA—SERVICE: for Six"}
+        self.assertTrue(sources._cleveland_has_exact_phrase(
+            artwork, "tea service",
+        ))
+
+    def test_cleveland_exact_phrase_rejects_intervening_words(self):
+        artwork = {"title": "A tea and coffee service"}
+        self.assertFalse(sources._cleveland_has_exact_phrase(
+            artwork, "tea service",
+        ))
+
+    def test_cleveland_exact_phrase_preserves_word_boundaries(self):
+        artwork = {"title": "A teaservice for six"}
+        self.assertFalse(sources._cleveland_has_exact_phrase(
+            artwork, "tea service",
+        ))
+
+    def test_cleveland_exact_phrase_paginates_all_candidates(self):
+        false_matches = [{
+            "id": index, "title": "Tea and Coffee Service",
+            "images": {"web": {"url": f"https://images.test/{index}.jpg"}},
+        } for index in range(1000)]
+        exact = {
+            "id": 1001, "title": "Tea Service",
+            "images": {"web": {"url": "https://images.test/exact.jpg"}},
+        }
+        urls = []
+        original = sources._get_json
+
+        def paged(url, *args, **kwargs):
+            urls.append(url)
+            skip = int(urllib.parse.parse_qs(
+                urllib.parse.urlsplit(url).query
+            )["skip"][0])
+            return {
+                "info": {"total": 1001},
+                "data": false_matches if skip == 0 else [exact],
+            }
+
+        sources._get_json = paged
+        try:
+            items = sources.cleveland("tea service", 1, exact_phrase=True,
+                                      smart_parts=False)
+        finally:
+            sources._get_json = original
+        self.assertEqual([item["source_id"] for item in items], ["1001"])
+        self.assertEqual(len(urls), 2)
+        self.assertIn("skip=1000", urls[1])
+
+    def test_cleveland_unquoted_query_keeps_broad_single_page_behavior(self):
+        urls = []
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: (
+            urls.append(url) or {"data": []}
+        )
+        try:
+            self.assertEqual(sources.cleveland("tea service", 4), [])
+        finally:
+            sources._get_json = original
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(urls[0]).query)
+        self.assertEqual(params["limit"], ["8"])
+        self.assertNotIn("smart_parts", params)
 
     def test_vam_fetches_object_summary_description(self):
         search_response = {"records": [{
@@ -616,6 +1062,28 @@ class BatchTests(unittest.TestCase):
             item["description"], "A carved figure from a winged altarpiece."
         )
 
+    def test_vam_retains_query_bearing_object_history_for_app_evidence(self):
+        search_response = {"records": [{
+            "systemNumber": "O2", "_primaryTitle": "Casket",
+            "objectType": "Metalwork",
+            "_images": {"_iiif_image_base_url": "https://iiif.test/O2/"},
+        }]}
+        detail_response = {"record": {
+            "summaryDescription": "A decorated silver casket.",
+            "objectHistory": "Its lock has a mask of Mercury and caduceus.",
+        }}
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: (
+            detail_response if "/v2/object/" in url else search_response
+        )
+        try:
+            item = sources.vam("caduceus", 1)[0]
+        finally:
+            sources._get_json = original
+        normalized = server.normalize_result(item, query="caduceus")
+        self.assertIn("caduceus", normalized["match_context"])
+        self.assertIn("Object History", normalized["matched_fields"])
+
     def test_rijksmuseum_extracts_english_display_description(self):
         record = {"subject_of": [{
             "type": "LinguisticObject",
@@ -632,6 +1100,156 @@ class BatchTests(unittest.TestCase):
             sources._rijks_description(record),
             "A procession crosses the town square.",
         )
+
+    def test_rijksmuseum_prefers_query_matching_description_with_inherited_language(self):
+        record = {"subject_of": [{
+            "type": "LinguisticObject",
+            "language": [{"id": "http://vocab.getty.edu/aat/300388256"}],
+            "part": [{
+                "type": "LinguisticObject",
+                "content": (
+                    "Rechtsonder: Penning met de Egyptische god Anubis en "
+                    "vier andere munten."
+                ),
+            }],
+        }, {
+            "type": "LinguisticObject",
+            "language": [{"id": "http://vocab.getty.edu/aat/300388277"}],
+            "part": [{
+                "type": "LinguisticObject",
+                "content": "A generic publication-history note.",
+                "classified_as": [{
+                    "id": "http://vocab.getty.edu/aat/300048722",
+                }],
+            }],
+        }]}
+        self.assertIn(
+            "Anubis", sources._rijks_query_description(record, "Anubis"),
+        )
+
+    def test_rijksmuseum_phrase_match_is_contiguous_and_field_local(self):
+        record = {
+            "identified_by": [{
+                "type": "Name",
+                "content": "A copy of The Night-Watch",
+            }],
+            "referred_to_by": [{
+                "type": "LinguisticObject",
+                "content": "The guards keep watch throughout the night.",
+            }],
+        }
+        self.assertTrue(sources._rijks_phrase_matches(record, '"night watch"'))
+        self.assertFalse(sources._rijks_phrase_matches(record, "watch night"))
+        self.assertFalse(sources._rijks_phrase_matches({
+            "identified_by": [{"type": "Name", "content": "Night"}],
+            "referred_to_by": [{
+                "type": "LinguisticObject", "content": "Watch",
+            }],
+        }, "night watch"))
+
+    def test_rijksmuseum_unions_fields_deduplicates_and_filters_phrase(self):
+        search_calls = []
+
+        def object_record(title, description, number, visual_id):
+            return {
+                "identified_by": [
+                    {"type": "Name", "content": title},
+                    {"type": "Identifier", "content": number},
+                ],
+                "referred_to_by": [{
+                    "type": "LinguisticObject",
+                    "content": description,
+                    "classified_as": [{
+                        "id": "http://vocab.getty.edu/aat/300435416",
+                    }],
+                }],
+                "shows": [{"id": visual_id}],
+            }
+
+        responses = {
+            "obj-false": object_record(
+                "Watch at Night", "A guard observes the city.",
+                "FALSE-1", "visual-false",
+            ),
+            "obj-description": object_record(
+                "City Guard", "A night-watch patrol crosses the square.",
+                "DESC-1", "visual-description",
+            ),
+            "obj-title": object_record(
+                "Copy of the Night Watch", "A painted copy.",
+                "TITLE-1", "visual-title",
+            ),
+        }
+        for suffix in ("false", "description", "title"):
+            responses[f"visual-{suffix}"] = {
+                "digitally_shown_by": [{"id": f"digital-{suffix}"}],
+                "subject_to": [],
+            }
+            responses[f"digital-{suffix}"] = {
+                "access_point": [{
+                    "id": f"https://iiif.test/{suffix}/full/max/0/default.jpg",
+                }],
+            }
+
+        original = sources._get_json
+
+        def fake_get(url, *args, **kwargs):
+            if "/search/collection?" in url:
+                search_calls.append(url)
+                if "description=" in url:
+                    ids = ("obj-false", "obj-description")
+                else:
+                    ids = ("obj-title", "obj-description")
+                return {"orderedItems": [
+                    {"id": f"https://id.rijksmuseum.nl/{item}"}
+                    for item in ids
+                ]}
+            return responses[url.rsplit("/", 1)[-1]]
+
+        sources._get_json = fake_get
+        try:
+            items = sources.rijksmuseum("night watch", 2)
+        finally:
+            sources._get_json = original
+
+        self.assertEqual([item["source_id"] for item in items], [
+            "TITLE-1", "DESC-1",
+        ])
+        self.assertEqual(len(search_calls), 2)
+        self.assertTrue(any("description=" in url for url in search_calls))
+        self.assertTrue(any("title=" in url for url in search_calls))
+
+    def test_rijksmuseum_search_ids_follows_page_tokens(self):
+        first_ids = [f"https://id.rijksmuseum.nl/{index}" for index in range(100)]
+        second_ids = [
+            "https://id.rijksmuseum.nl/99",  # duplicate across pages
+            "https://id.rijksmuseum.nl/100",
+            "https://id.rijksmuseum.nl/101",
+        ]
+        calls = []
+        original = sources._get_json
+
+        def fake_get(url, *args, **kwargs):
+            calls.append(url)
+            if "pageToken=" in url:
+                return {"orderedItems": [{"id": item} for item in second_ids]}
+            return {
+                "orderedItems": [{"id": item} for item in first_ids],
+                "next": {"id": (
+                    "https://data.rijksmuseum.nl/search/collection?"
+                    "description=guard&pageToken=next"
+                )},
+            }
+
+        sources._get_json = fake_get
+        try:
+            ids = sources._rijks_search_ids("description", "guard", 102)
+        finally:
+            sources._get_json = original
+
+        self.assertEqual(len(ids), 102)
+        self.assertEqual(ids[-2:], second_ids[-2:])
+        self.assertEqual(len(calls), 2)
 
     def test_wellcome_enriches_images_with_work_artist_and_date(self):
         image_response = {"results": [{
@@ -674,6 +1292,216 @@ class BatchTests(unittest.TestCase):
             "A physician demonstrates the instrument to a patient.",
         )
         self.assertEqual(item["license"], "Public Domain Mark")
+
+    def test_smk_runes_filter_keeps_rune_forms_and_rejects_ocr_run(self):
+        def record(source_id, title):
+            return {
+                "object_number": source_id,
+                "titles": [{"title": title}],
+                "image_native": f"https://images.test/{source_id}.jpg",
+            }
+
+        search_response = {"items": [
+            record("visible", "Stående model, Rune"),
+            record("ocr-run", "Uden titel."),
+            record("ocr-rune", "Blank"),
+        ]}
+        enrichments = {
+            "ocr-run": [{"type": "textdetection", "data": {"tags_en": ["RUN"]}}],
+            "ocr-rune": [{"type": "textdetection", "data": {"tags_en": ["RUNE"]}}],
+        }
+        original = sources._get_json
+
+        def fake_get(url, *args, **kwargs):
+            if "/art/search/" in url:
+                return search_response
+            source_id = urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
+            return enrichments.get(source_id, [])
+
+        sources._get_json = fake_get
+        try:
+            items = sources.smk("runes", 3)
+        finally:
+            sources._get_json = original
+
+        self.assertEqual(
+            [item["source_id"] for item in items], ["visible", "ocr-rune"],
+        )
+
+    def test_wellcome_displays_work_primary_instead_of_matched_reverse(self):
+        image_response = {"results": [{
+            "id": "reverse-image",
+            "source": {"id": "postcard-work", "title": "Mercury postcard"},
+            "thumbnail": {
+                "url": "https://iiif.wellcomecollection.org/image/CARD_0002.JP2/info.json",
+                "license": {"label": "In copyright"},
+            },
+        }]}
+        work_response = {
+            "id": "postcard-work",
+            "workType": {"id": "k", "type": "Format", "label": "Pictures"},
+            "thumbnail": {
+                "url": "https://iiif.wellcomecollection.org/thumbs/CARD_0001.JP2/full/200,/0/default.jpg",
+            },
+        }
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: (
+            work_response if "/works/postcard-work?" in url else image_response
+        )
+        try:
+            item = sources.wellcome("Mercury", 1)[0]
+        finally:
+            sources._get_json = original
+        self.assertEqual(
+            item["image_url"],
+            "https://iiif.wellcomecollection.org/image/CARD_0001.JP2/full/max/0/default.jpg",
+        )
+        self.assertIn("CARD_0002.JP2", item["matched_image_url"])
+        self.assertEqual(item["work_id"], "postcard-work")
+        self.assertTrue(item["is_primary_view"])
+        self.assertEqual(
+            item["page_url"],
+            "https://wellcomecollection.org/works/postcard-work",
+        )
+
+    def test_wellcome_book_keeps_matched_plate_instead_of_title_page(self):
+        image_response = {"results": [{
+            "id": "plate-image",
+            "source": {
+                "id": "book-work",
+                "title": "Graphic illustrations engraved on stone",
+            },
+            "thumbnail": {
+                "url": "https://iiif.wellcomecollection.org/image/PLATE_001.JP2/info.json",
+            },
+        }]}
+        work_response = {
+            "id": "book-work",
+            "workType": {"id": "a", "type": "Format", "label": "Books"},
+            "thumbnail": {
+                "url": "https://iiif.wellcomecollection.org/thumbs/TITLE_001.JP2/full/200,/0/default.jpg",
+            },
+        }
+        original = sources._get_json
+        sources._get_json = lambda url, *args, **kwargs: (
+            work_response if "/works/book-work?" in url else image_response
+        )
+        try:
+            item = sources.wellcome("stone", 1)[0]
+        finally:
+            sources._get_json = original
+
+        self.assertEqual(
+            item["image_url"],
+            "https://iiif.wellcomecollection.org/image/PLATE_001.JP2/full/max/0/default.jpg",
+        )
+        self.assertFalse(item["is_primary_view"])
+
+    def test_wellcome_unknown_work_type_fails_closed_to_matched_image(self):
+        self.assertFalse(sources._wellcome_can_use_work_primary({}))
+        self.assertFalse(sources._wellcome_can_use_work_primary({
+            "workType": {"label": "Ephemera"},
+        }))
+        self.assertTrue(sources._wellcome_can_use_work_primary({
+            "workType": {"label": "Pictures"},
+        }))
+
+    def test_wellcome_exact_search_paginates_the_candidate_budget(self):
+        calls = []
+        original = sources._get_json
+
+        def image(index):
+            return {
+                "id": f"image-{index}",
+                "source": {"id": f"work-{index}", "title": f"Work {index}"},
+                "thumbnail": {
+                    "url": f"https://iiif.wellcome.test/{index}/info.json",
+                },
+            }
+
+        def fake_get(url, *args, **kwargs):
+            calls.append(url)
+            if "/works/" in url:
+                return {}
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            page = int(params.get("page", ["1"])[0])
+            page_size = int(params["pageSize"][0])
+            start = (page - 1) * page_size
+            return {
+                "results": [image(index) for index in range(start, start + page_size)],
+                "nextPage": "next" if page == 1 else "",
+            }
+
+        sources._get_json = fake_get
+        try:
+            items = sources.wellcome(
+                "guardian threshold", 150,
+                exact_phrases=("guardian threshold",),
+            )
+        finally:
+            sources._get_json = original
+
+        image_calls = [url for url in calls if "/images?" in url]
+        self.assertEqual(len(items), 150)
+        self.assertEqual(len(image_calls), 2)
+        first = urllib.parse.parse_qs(urllib.parse.urlsplit(image_calls[0]).query)
+        second = urllib.parse.parse_qs(urllib.parse.urlsplit(image_calls[1]).query)
+        self.assertEqual(first["pageSize"], ["100"])
+        self.assertEqual(second["pageSize"], ["100"])
+        self.assertEqual(second["page"], ["2"])
+        self.assertIn("source.subjects", first["include"][0])
+
+    def test_wellcome_exposes_full_text_metadata_for_exact_verification(self):
+        work = {
+            "title": "A vessel",
+            "subjects": [{"label": "Guardian—of the threshold"}],
+            "notes": [{"contents": "Ceremonial object"}],
+        }
+        values = sources._wellcome_search_text(work, {})
+        self.assertIn("Guardian—of the threshold", values)
+        self.assertIn("Ceremonial object", values)
+        self.assertNotIn("Work", values)
+
+    def test_wellcome_rejects_single_term_hit_from_broader_provider_stem(self):
+        image_response = {"results": [{
+            "id": "run-image",
+            "source": {"id": "run-work", "title": "Run no risks"},
+            "thumbnail": {"url": "https://iiif.wellcome.test/run/info.json"},
+        }, {
+            "id": "rune-image",
+            "source": {"id": "rune-work", "title": "A Viking rune stone"},
+            "thumbnail": {"url": "https://iiif.wellcome.test/rune/info.json"},
+        }]}
+        works = {
+            "run-work": {"description": "A road-safety milk bottle cap."},
+            "rune-work": {"description": "A stone inscribed with a rune."},
+        }
+        original = sources._get_json
+
+        def fake_get(url, *args, **kwargs):
+            for work_id, work in works.items():
+                if f"/works/{work_id}?" in url:
+                    return work
+            return image_response
+
+        sources._get_json = fake_get
+        try:
+            items = sources.wellcome("runes", 1)
+        finally:
+            sources._get_json = original
+
+        self.assertEqual([item["source_id"] for item in items], ["rune-image"])
+
+    def test_wellcome_single_term_verifier_keeps_safe_noun_inflections(self):
+        self.assertTrue(sources._wellcome_single_term_hit_is_supported(
+            "runes", ["A carved rune"],
+        ))
+        self.assertTrue(sources._wellcome_single_term_hit_is_supported(
+            "rune", ["Several runes"],
+        ))
+        self.assertFalse(sources._wellcome_single_term_hit_is_supported(
+            "runes", ["Run no risks"],
+        ))
 
     def test_encrypted_credentials_round_trip_from_separate_files(self):
         original_env = {
@@ -873,6 +1701,104 @@ class BatchTests(unittest.TestCase):
         self.assertFalse(additional_sources.commons_metadata_is_relevant(
             "kundalini", "Camp Chesterfield general account ledger",
         ))
+        self.assertTrue(additional_sources.commons_metadata_is_relevant(
+            "Caduceus of Mercury",
+            '"Cato" on constitutional money in the Charleston mercury',
+        ))
+
+    def test_commons_parser_rejects_dpla_pages_matching_only_mercury(self):
+        title = (
+            'File:"Cato" on constitutional "money" and legal tender. In 12 '
+            'no. from the Charleston mercury - DPLA - '
+            '20b4f8f4b36bd2c33baf94189f183c71 (page 24).jpg'
+        )
+        payload = {"query": {"pages": {"24": {
+            "title": title,
+            "imageinfo": [{
+                "mime": "image/jpeg",
+                "url": "https://commons.test/cato-page-24.jpg",
+                "extmetadata": {
+                    "ObjectName": {"value": (
+                        '"Cato" on constitutional "money" and legal tender. '
+                        "In 12 no. from the Charleston mercury"
+                    )},
+                    "ImageDescription": {"value": (
+                        "Issued in a case; Charleston mercury, Evans & "
+                        "Cogswell, 1862, Duke University Libraries"
+                    )},
+                    "LicenseShortName": {"value": "Public domain"},
+                },
+            }],
+        }}}}
+        self.assertEqual(
+            additional_sources.parse_museum_commons_response(
+                payload, 10, "Caduceus of Mercury"
+            ),
+            [],
+        )
+
+    def test_commons_rejects_book_page_even_when_parent_title_fully_matches(self):
+        title = (
+            "File:The caduceus of Mercury - DPLA - "
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (page 7).jpg"
+        )
+        payload = {"query": {"pages": {"7": {
+            "title": title,
+            "imageinfo": [{
+                "mime": "image/jpeg", "url": "https://commons.test/page-7.jpg",
+                "extmetadata": {
+                    "ObjectName": {"value": "The caduceus of Mercury"},
+                    "Description": {"value": (
+                        "The caduceus of Mercury, donated by Example Library"
+                    )},
+                    "LicenseShortName": {"value": "Public domain"},
+                },
+            }],
+        }}}}
+        self.assertEqual(
+            additional_sources.parse_museum_commons_response(
+                payload, 10, "Caduceus of Mercury"
+            ),
+            [],
+        )
+
+    def test_commons_keeps_numbered_page_with_page_level_illustration_metadata(self):
+        title = (
+            "File:The caduceus of Mercury - DPLA - "
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (page 8).jpg"
+        )
+        payload = {"query": {"pages": {"8": {
+            "title": title,
+            "imageinfo": [{
+                "mime": "image/jpeg", "url": "https://commons.test/page-8.jpg",
+                "extmetadata": {
+                    "ObjectName": {"value": "The caduceus of Mercury"},
+                    "ImageDescription": {"value": (
+                        "The caduceus of Mercury. Plate 8: an engraving depicting "
+                        "Mercury holding the caduceus."
+                    )},
+                    "LicenseShortName": {"value": "Public domain"},
+                },
+            }],
+        }}}}
+        items = additional_sources.parse_museum_commons_response(
+            payload, 10, "Caduceus of Mercury"
+        )
+        self.assertEqual([item["source_id"] for item in items], [title])
+
+    def test_commons_long_description_surfaces_query_match_context(self):
+        description = (
+            "A historical account of Norwegian volunteers and their uniforms. "
+            + "Background material. " * 80
+            + "SS runes on a black diamond were worn on the right upper arm. "
+            + "A small badge also displayed silver SS runes."
+        )
+        excerpt = additional_sources._query_centered_excerpt(
+            description, "runes", 300
+        )
+        self.assertIn("SS runes on a black diamond", excerpt)
+        self.assertIn("silver SS runes", excerpt)
+        self.assertLessEqual(len(excerpt), 301)
 
     def test_commons_parser_filters_irrelevant_metadata_before_limit(self):
         payload = {"query": {"pages": {
@@ -897,6 +1823,49 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(
             [item["source_id"] for item in items], ["File:Kundalini symbol.jpg"]
         )
+
+    def test_commons_parser_rejects_match_found_only_in_grouping_category(self):
+        payload = {"query": {"pages": {"1": {
+            "title": "File:Chain with Birds and Geometric Motifs MET DT12030.jpg",
+            "imageinfo": [{
+                "mime": "image/jpeg", "url": "https://commons.test/reverse.jpg",
+                "extmetadata": {
+                    "ObjectName": {"value": "Chain with Birds and Geometric Motifs"},
+                    "ImageDescription": {"value": "Kievan Rus; dress ornament"},
+                    "Categories": {"value": "Chains with Birds and Trees of Life, MET 17.190.705-6"},
+                    "LicenseShortName": {"value": "CC0"},
+                },
+            }],
+        }}}}
+        self.assertEqual(
+            additional_sources.parse_museum_commons_response(
+                payload, 10, "Kabbalistic Tree of Life"
+            ),
+            [],
+        )
+
+    def test_commons_parser_prefers_earlier_met_primary_view(self):
+        def page(asset, url):
+            return {
+                "title": f"File:Geometric Motifs MET DT{asset}.jpg",
+                "imageinfo": [{
+                    "mime": "image/jpeg", "url": url,
+                    "extmetadata": {
+                        "ObjectName": {"value": "Geometric Motifs"},
+                        "Categories": {"value": "Geometric Motifs, MET 17.190.706"},
+                        "LicenseShortName": {"value": "CC0"},
+                    },
+                }],
+            }
+        payload = {"query": {"pages": {
+            "reverse": page(12030, "https://commons.test/reverse.jpg"),
+            "front": page(12029, "https://commons.test/front.jpg"),
+        }}}
+        items = additional_sources.parse_museum_commons_response(
+            payload, 10, "geometric motifs"
+        )
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["image_url"], "https://commons.test/front.jpg")
 
     def test_universal_comasonry_parses_gallery_index_and_images(self):
         index = """
@@ -1084,6 +2053,32 @@ class BatchTests(unittest.TestCase):
             ["PLATE 25: Grand Man of The Zohar"],
         )
 
+    def test_universal_comasonry_does_not_match_tree_inside_streets(self):
+        irrelevant = {
+            "title": "Freemason's Hall, Queen Streets, 1775",
+            "medium": "The Art & Architecture of Freemasonry",
+            "page_url": "https://example.test/freemason-hall-1775",
+            "search_text": "An artistic depiction of Freemason's Hall, London.",
+        }
+        relevant = {
+            "title": "The Kabbalistic Tree of Life",
+            "medium": "Diagram",
+            "page_url": "https://example.test/tree-of-life",
+            "search_text": "The ten Sephiroth are arranged on the Tree of Life.",
+        }
+        self.assertEqual(
+            additional_sources._universal_comasonry_match_score(
+                "Kabbalistic Tree of Life", irrelevant
+            )[0],
+            0.0,
+        )
+        self.assertGreater(
+            additional_sources._universal_comasonry_match_score(
+                "Kabbalistic Tree of Life", relevant
+            )[0],
+            0.0,
+        )
+
     def test_getty_parser_accepts_only_cc0_and_builds_full_iiif_url(self):
         payload = {"data": [{
             "id": "object/c88b3df0-de91-4f5b-a9ef-7b2b9a6d8abb",
@@ -1134,6 +2129,51 @@ class BatchTests(unittest.TestCase):
             "Van Gogh painted the irises from nature in the asylum garden.",
         )
 
+    def test_getty_linked_art_context_exposes_query_bearing_provenance(self):
+        record = {"referred_to_by": [{
+            "type": "LinguisticObject",
+            "_label": (
+                "Provenance acquisition associated with Atlantis Antiquities, "
+                "Ltd.; subsequently sold to the museum in 1987."
+            ),
+        }]}
+        context = additional_sources._getty_linked_art_query_context(
+            record, "Atlantis"
+        )
+        self.assertIn("Atlantis Antiquities", context)
+
+    def test_getty_manifest_requires_query_terms_on_one_child_page(self):
+        def canvas(identifier):
+            return {
+                "id": f"https://media.getty.edu/iiif/manifest/canvas/{identifier}",
+                "type": "Canvas",
+                "items": [{"items": [{"body": {
+                    "id": f"https://media.getty.edu/iiif/image/{identifier}/full/max/0/default.jpg",
+                    "type": "Image",
+                }}]}],
+            }
+
+        manifest = {
+            "items": [canvas("sun"), canvas("stone"), canvas("match")],
+            "structures": [{"items": [
+                {"id": "https://media.getty.edu/iiif/manifest/canvas/sun",
+                 "type": "Canvas", "label": {"en": ["The Sun-lodge"]}},
+                {"id": "https://media.getty.edu/iiif/manifest/canvas/stone",
+                 "type": "Canvas", "label": {"en": ["Buffalo-stones"]}},
+                {"id": "https://media.getty.edu/iiif/manifest/canvas/match",
+                 "type": "Canvas", "label": {"en": ["Aztec Sun Stone"]}},
+            ]}],
+        }
+        page = additional_sources._getty_manifest_matching_page(
+            manifest, "Aztec Sun Stone"
+        )
+        self.assertEqual(page["title"], "Aztec Sun Stone")
+        self.assertIn("/image/match/", page["image_url"])
+        manifest["structures"][0]["items"].pop()
+        self.assertIsNone(additional_sources._getty_manifest_matching_page(
+            manifest, "Aztec Sun Stone"
+        ))
+
     def test_loc_parser_uses_largest_derivative_and_rights_statement(self):
         payload = {"results": [{
             "digitized": True, "access_restricted": False,
@@ -1157,6 +2197,67 @@ class BatchTests(unittest.TestCase):
         normalized = server.normalize_result(item)
         self.assertEqual(normalized["preview_click_action"], "visit_website")
         self.assertEqual(normalized["preview_click_url"], "https://www.loc.gov/item/123/")
+
+    def test_loc_parser_excludes_multipage_books_matched_through_ocr(self):
+        book = {
+            "digitized": True, "access_restricted": False,
+            "id": "http://www.loc.gov/item/08016592/", "title": "Poems,",
+            "original_format": ["photo, print, drawing", "book"],
+            "image_url": [
+                "https://tile.loc.gov/cover.jpg#h=1200&w=800",
+            ],
+            "resources": [{
+                "files": 348,
+                "fulltext_derivative": "https://tile.loc.gov/book.text.json",
+                "text_file": "https://tile.loc.gov/book.text.txt",
+                "representative_index": 10,
+            }],
+            "item": {"id": "08016592", "format": ["text"]},
+        }
+        photo = {
+            "digitized": True, "access_restricted": False,
+            "id": "http://www.loc.gov/item/photo/", "title": "Moses and the serpent",
+            "original_format": ["photo, print, drawing"],
+            "image_url": [
+                "https://tile.loc.gov/photo.jpg#h=800&w=1200",
+            ],
+            "item": {"id": "photo", "format": ["still image"]},
+        }
+        items = additional_sources.parse_loc_response(
+            {"results": [book, photo]}, 10
+        )
+        self.assertEqual([item["source_id"] for item in items], ["photo"])
+
+    def test_loc_parser_excludes_explicit_text_only_catalog_cards(self):
+        catalog_card = {
+            "digitized": True, "access_restricted": False,
+            "id": "http://www.loc.gov/item/card/", "title": "Calipso",
+            "genre": ["card catalogs"],
+            "image_url": ["https://tile.loc.gov/card.jpg#h=900&w=1500"],
+            "resources": [{"caption": "Card catalog image", "files": 1}],
+            "item": {
+                "id": "card", "genre": ["card catalogs"],
+                "notes": ["This is a digitized catalog card, not an audio recording."],
+            },
+        }
+        self.assertEqual(
+            additional_sources.parse_loc_response({"results": [catalog_card]}, 10),
+            [],
+        )
+
+    def test_loc_catalog_card_filter_requires_corresponding_resource_evidence(self):
+        illustrated_work = {
+            "digitized": True, "access_restricted": False,
+            "id": "http://www.loc.gov/item/poster/", "title": "Library poster",
+            "subject": ["card catalogs"],
+            "image_url": ["https://tile.loc.gov/poster.jpg#h=1200&w=800"],
+            "resources": [{"caption": "Illustrated poster", "files": 1}],
+            "item": {"id": "poster", "format": ["still image"]},
+        }
+        items = additional_sources.parse_loc_response(
+            {"results": [illustrated_work]}, 10
+        )
+        self.assertEqual([item["source_id"] for item in items], ["poster"])
 
     def test_harvard_parser_excludes_restricted_images_and_builds_iiif_urls(self):
         payload = {"records": [{
@@ -1189,6 +2290,27 @@ class BatchTests(unittest.TestCase):
             items[0]["thumb_url"],
             "https://nrs.harvard.edu/urn-3:HUAM:ABC_dynmc/"
             "full/!1024,1024/0/default.jpg",
+        )
+
+    def test_harvard_description_includes_series_title_when_prose_is_absent(self):
+        record = {
+            "title": "Spring",
+            "titles": [
+                {"titletype": "Title", "title": "Spring", "displayorder": 1},
+                {"titletype": "Series/Book Title",
+                 "title": "Four Seasons, with the Zodiac", "displayorder": 2},
+            ],
+        }
+        self.assertEqual(
+            additional_sources._harvard_description(record),
+            "Series/Book Title: Four Seasons, with the Zodiac.",
+        )
+
+    def test_description_language_maps_prefer_english(self):
+        descriptions = {"nl": ["Nederlands"], "en-GB": ["English context"]}
+        self.assertEqual(sources._description_text(descriptions), "English context")
+        self.assertEqual(
+            additional_sources._clean_description(descriptions), "English context",
         )
 
     def test_harvard_proxy_uses_official_signed_cdn_url(self):
@@ -1459,6 +2581,25 @@ class BatchTests(unittest.TestCase):
         self.assertIn("The Liberation of St. Peter", item["description"])
         self.assertEqual((item["width"], item["height"]), (3840, 2673))
 
+    def test_gnosis_live_rejects_krishna_substring_inside_ramakrishna(self):
+        response = [{
+            "id": 10810,
+            "title": {"rendered": "Lecture screenshot"},
+            "caption": {"rendered": "<p>Swami Sarvapriyananda</p>"},
+            "description": {"rendered": (
+                "A Vedanta lecture by a monk of the Ramakrishna Order."
+            )},
+            "mime_type": "image/jpeg", "link": "https://gnosis.test/10810",
+            "source_url": "https://gnosis.test/10810.jpg",
+            "media_details": {"width": 1200, "height": 800, "sizes": {}},
+        }]
+        original = sources._get_json
+        sources._get_json = lambda *args, **kwargs: response
+        try:
+            self.assertEqual(sources._gnosis_live("Krishna", 10), [])
+        finally:
+            sources._get_json = original
+
     def test_aic_uses_api_dimensions_cached_iiif_sizes_and_placeholder(self):
         response = {
             "config": {"iiif_url": "https://images.example/iiif/2"},
@@ -1551,6 +2692,105 @@ class BatchTests(unittest.TestCase):
              sources._wayback_aic_images_for) = originals
         self.assertEqual([item["source_id"] for item in items], ["185963"])
 
+    def test_aic_discards_high_scoring_single_concept_false_positive(self):
+        response = {"data": [{
+            "_score": 69.58571, "id": 95, "title": "Daniel Mytens",
+            "artist_display": "Paul Pontius", "image_id": "mytens",
+            "is_public_domain": True, "thumbnail": {},
+        }, {
+            "_score": 58.753357, "id": 14556,
+            "title": "Auvers, Panoramic View",
+            "artist_display": "Paul Cezanne (French, 1839–1906)",
+            "description": "A landscape overlooking the countryside.",
+            "subject_titles": ["landscapes", "hills", "trees"],
+            "image_id": "auvers", "is_public_domain": True,
+            "thumbnail": {},
+        }, {
+            "_score": 61.434586, "id": 80940,
+            "title": "Saint Paul Rescued from Prison by an Angel",
+            "image_id": "saint-paul", "is_public_domain": True,
+            "thumbnail": {},
+        }]}
+        requested_urls = []
+        resolved_ids = []
+        originals = (sources._get_json, sources._aic_commons_images,
+                     sources._hf_aic_images_for, sources._wayback_aic_images_for)
+
+        def get_json(url, *args, **kwargs):
+            requested_urls.append(url)
+            return response
+
+        def resolved(ids):
+            resolved_ids.append(list(ids))
+            return {}
+
+        sources._get_json = get_json
+        sources._aic_commons_images = resolved
+        sources._hf_aic_images_for = resolved
+        sources._wayback_aic_images_for = lambda artworks: {}
+        try:
+            items = sources.aic("paul escape from prison", 1)
+        finally:
+            (sources._get_json, sources._aic_commons_images,
+             sources._hf_aic_images_for,
+             sources._wayback_aic_images_for) = originals
+
+        self.assertEqual([item["source_id"] for item in items], ["80940"])
+        self.assertEqual(resolved_ids, [[80940], [80940]])
+        self.assertIn("limit=20", requested_urls[0])
+        self.assertIn("subject_titles,term_titles", requested_urls[0])
+
+    def test_aic_requires_both_concepts_for_two_concept_query(self):
+        self.assertFalse(sources._aic_has_sufficient_concept_coverage(
+            "paul prison", {"artist_display": "Paul Cezanne"},
+        ))
+        self.assertTrue(sources._aic_has_sufficient_concept_coverage(
+            "paul prison", {"title": "Paul Released from Prison"},
+        ))
+        self.assertTrue(sources._aic_has_sufficient_concept_coverage(
+            "paul escape from prison",
+            {"title": "Liberation of Saint Peter from Prison"},
+        ))
+
+    def test_aic_keeps_partial_match_found_in_hidden_controlled_terms(self):
+        mary_magdalene = {
+            "title": "Mary Magdalene",
+            "description": (
+                "Mary Magdalene casts a melancholy glance at the viewer."
+            ),
+            "subject_titles": [
+                "Mary Magdalene", "trees", "tree of life", "foliage",
+            ],
+            "term_titles": ["woman", "religious figures", "tree of life"],
+        }
+        self.assertTrue(sources._aic_has_sufficient_concept_coverage(
+            "Kabbalistic Tree of Life", mary_magdalene,
+        ))
+        mary_magdalene["subject_titles"].append("Kabbalistic")
+        self.assertTrue(sources._aic_has_sufficient_concept_coverage(
+            "Kabbalistic Tree of Life", mary_magdalene,
+        ))
+
+    def test_aic_display_description_surfaces_hidden_lucifer_subject_term(self):
+        record = {
+            "description": "Demons on horses climb a mountain.",
+            "subject_titles": [
+                "satan", "devil/satan/lucifer/beezelbub/mephistopheles",
+            ],
+            "term_titles": ["panel painting"],
+        }
+        description = sources._aic_display_description(record, "Lucifer")
+        self.assertIn(
+            "Subject term — “devil/satan/lucifer/beezelbub/mephistopheles”",
+            description,
+        )
+        self.assertIn("Demons on horses", description)
+
+    def test_aic_single_concept_query_keeps_broad_provider_behavior(self):
+        self.assertTrue(sources._aic_has_sufficient_concept_coverage(
+            "paul", {"title": "Metadata can be incomplete"},
+        ))
+
     def test_aic_uses_hugging_face_preview_and_preserves_native_dimensions(self):
         response = {
             "config": {"iiif_url": "https://images.example/iiif/2"},
@@ -1576,6 +2816,10 @@ class BatchTests(unittest.TestCase):
             sources._hf_aic_images_for = original_hf
         self.assertEqual(item["image_delivery"], "huggingface")
         self.assertEqual(item["image_url"], "https://hf.test/preview.jpg")
+        self.assertEqual(
+            item["fallback_image_url"],
+            "https://images.example/iiif/2/abc/full/!843,843/0/default.jpg",
+        )
         self.assertEqual((item["preview_width"], item["preview_height"]), (843, 1095))
         self.assertEqual((item["width"], item["height"]), (1732, 2250))
         self.assertEqual(item["full_resolution_url"],

@@ -3,8 +3,10 @@
  image_url, thumb_url, width, height, description}
 All requests are disk-cached and polite. Unconfigured/failing sources return [].
 """
-import base64, concurrent.futures, hashlib, html, io, json, os, re, threading, time
+import base64, concurrent.futures, hashlib, html, io, json, os, re, threading, time, unicodedata
 import urllib.request, urllib.parse
+
+from relevance_terms import concepts
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(
@@ -100,12 +102,13 @@ def _description_text(value):
     """Return one clean human-readable description from API scalar variants."""
     if isinstance(value, dict):
         ordered = []
-        for language in ("en", "en-US", "en-GB", "def"):
-            if language in value:
-                ordered.append(value[language])
-        ordered.extend(item for key, item in value.items()
-                       if key not in ("en", "en-US", "en-GB", "def"))
-        value = ordered
+        for key, item in value.items():
+            language = str(key).replace("_", "-").casefold()
+            priority = 0 if language == "en" or language.startswith("en-") else (
+                1 if language in {"def", "default", "und"} else 2
+            )
+            ordered.append((priority, item))
+        value = [item for _priority, item in sorted(ordered, key=lambda row: row[0])]
     if isinstance(value, (list, tuple)):
         for item in value:
             text = _description_text(item)
@@ -117,11 +120,116 @@ def _description_text(value):
 
 # ---------------- Cleveland Museum of Art ----------------
 
-def cleveland(query, need, cue=None):
-    d = _get_json(f"https://openaccess-api.clevelandart.org/api/artworks/"
-                  f"?q={_q(query)}&has_image=1&limit={need * 2}", "cleveland")
+_CLEVELAND_EXACT_TEXT_FIELDS = (
+    "title", "alternate_titles", "tombstone", "creators", "culture",
+    "technique", "support_materials", "type", "collection", "department",
+    "description", "artlens_description", "early_education_description",
+    "did_you_know", "inscriptions", "provenance", "citations",
+    "exhibitions", "exhibition_history", "catalogue_raisonne",
+    "related_works", "creditline", "measurements", "find_spot",
+    "state_of_the_work", "edition_of_the_work", "impression",
+    "conservation_statement",
+)
+
+
+def _cleveland_phrase_query(query, exact_phrase=None):
+    """Return the upstream query and an optional locally verified phrase."""
+    value = str(query or "").strip()
+    quote_pairs = {'"': '"', "“": "”", "„": "“"}
+    quoted = len(value) >= 2 and quote_pairs.get(value[0]) == value[-1]
+    if exact_phrase is None:
+        exact_phrase = quoted
+    if exact_phrase and quoted:
+        value = value[1:-1].strip()
+    return value, value if exact_phrase and value else ""
+
+
+def _cleveland_normalize_phrase(value):
+    text = unicodedata.normalize("NFC", html.unescape(str(value or "")))
+    # Exactness is token-based: punctuation and whitespace may vary, but every
+    # query word must remain adjacent and in the original order. ``[^\W_]`` is
+    # Unicode-aware like ``\w`` while treating underscore as punctuation.
+    return " ".join(re.findall(r"[^\W_]+", text.casefold()))
+
+
+def _cleveland_text_values(value):
+    """Yield individual metadata strings without joining unrelated fields."""
+    if isinstance(value, str):
+        yield re.sub(r"<[^>]+>", " ", value)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _cleveland_text_values(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _cleveland_text_values(item)
+
+
+def _cleveland_has_exact_phrase(artwork, phrase):
+    needle = _cleveland_normalize_phrase(phrase)
+    if not needle:
+        return True
+    for field in _CLEVELAND_EXACT_TEXT_FIELDS:
+        for value in _cleveland_text_values(artwork.get(field)):
+            if needle in _cleveland_normalize_phrase(value):
+                return True
+    return False
+
+
+def _cleveland_candidates(query, exact_phrase="", smart_parts=False):
+    """Fetch every candidate page needed for deterministic phrase filtering."""
+    page_size = 1000 if exact_phrase else 0
+    skip = 0
+    candidates = []
+    while True:
+        limit = page_size or 1
+        params = {"q": query, "has_image": 1, "limit": limit, "skip": skip}
+        if smart_parts:
+            params["smart_parts"] = 1
+        data = _get_json(
+            "https://openaccess-api.clevelandart.org/api/artworks/?"
+            + urllib.parse.urlencode(params),
+            "cleveland",
+        )
+        rows = list((data or {}).get("data") or [])
+        candidates.extend(rows)
+        if not exact_phrase:
+            break
+        total = int(((data or {}).get("info") or {}).get("total") or 0)
+        skip += len(rows)
+        if not rows or len(rows) < page_size or (total and skip >= total):
+            break
+    return candidates
+
+
+def cleveland(query, need, cue=None, *, exact_phrase=None, smart_parts=None):
+    """Search CMA; quoted queries receive deterministic exact-phrase semantics."""
+    if need <= 0:
+        return []
+    candidate_query, phrase = _cleveland_phrase_query(query, exact_phrase)
+    if not candidate_query:
+        return []
+    if smart_parts is None:
+        smart_parts = bool(phrase)
+    if phrase:
+        candidates = _cleveland_candidates(candidate_query, phrase, smart_parts)
+        candidates = [
+            artwork for artwork in candidates
+            if _cleveland_has_exact_phrase(artwork, phrase)
+        ]
+    else:
+        params = {
+            "q": candidate_query, "has_image": 1, "limit": max(need * 2, 1),
+        }
+        if smart_parts:
+            params["smart_parts"] = 1
+        d = _get_json(
+            "https://openaccess-api.clevelandart.org/api/artworks/?"
+            + urllib.parse.urlencode(params),
+            "cleveland",
+        )
+        candidates = list((d or {}).get("data") or [])
     out = []
-    for a in (d or {}).get("data", []):
+    for a in candidates:
         try:
             img = a.get("images", {}) or {}
             web, full = img.get("web") or {}, img.get("print") or img.get("web") or {}
@@ -136,6 +244,11 @@ def cleveland(query, need, cue=None):
                             or a.get("early_education_description")
                             or a.get("did_you_know")
                         ),
+                        "search_text": {
+                            field.replace("_", " "): a.get(field)
+                            for field in _CLEVELAND_EXACT_TEXT_FIELDS
+                            if a.get(field)
+                        },
                         "license": "CC0" if a.get("share_license_status") == "CC0" else "unknown",
                         "page_url": a.get("url", ""), "image_url": full.get("url", web["url"]),
                         "thumb_url": web["url"],
@@ -143,7 +256,7 @@ def cleveland(query, need, cue=None):
                         "height": int(full.get("height") or web.get("height") or 0)})
         except Exception:
             continue
-    return out
+    return out[:max(need * 2, need)]
 
 # ---------------- Metropolitan Museum ----------------
 
@@ -282,6 +395,9 @@ _HF_AIC_ROWS_PATH = os.path.join(BASE, "aic_hf_rows.json")
 _HF_AIC_ROW_COUNT = 64019
 _HF_AIC_CACHE_TTL = 20 * 60
 AIC_SEARCH_FALLBACK_MAX_SCORE = 0.001
+AIC_SEARCH_MIN_CANDIDATES = 20
+AIC_SEARCH_CANDIDATE_MULTIPLIER = 8
+AIC_SEARCH_MAX_CANDIDATES = 100
 _hf_aic_images = {}
 _hf_aic_row_map = None
 _hf_aic_lock = threading.RLock()
@@ -417,15 +533,85 @@ def _aic_relevant_search_records(data):
     ]
 
 
+def _aic_search_text(record):
+    """Return useful object metadata without AIC's noisy publication history."""
+    thumbnail = record.get("thumbnail") or {}
+    values = [
+        record.get("title"), record.get("artist_display"),
+        record.get("description"), record.get("short_description"),
+        thumbnail.get("alt_text"),
+    ]
+    values.extend(record.get("subject_titles") or [])
+    values.extend(record.get("term_titles") or [])
+    return " ".join(_description_text(value) for value in values if value)
+
+
+def _aic_match_metadata(record, query):
+    """Return concise hidden controlled metadata that explains an AIC hit."""
+    query_concepts = concepts(query)
+    evidence = []
+    seen = set()
+    for label, values in (
+        ("Subject term", record.get("subject_titles") or []),
+        ("Index term", record.get("term_titles") or []),
+    ):
+        for value in values:
+            text = _description_text(value)
+            if text and text not in seen and query_concepts & concepts(text):
+                evidence.append(text)
+                seen.add(text)
+                break
+        if evidence:
+            break
+    return evidence
+
+
+def _aic_display_description(record, query):
+    """Compatibility view used by study/report code."""
+    evidence = [f'Subject term — “{text}”' for text in _aic_match_metadata(record, query)]
+    thumbnail = record.get("thumbnail") or {}
+    narrative = _description_text(
+        record.get("description") or record.get("short_description")
+        or thumbnail.get("alt_text")
+    )
+    return "\n\n".join([*evidence, *([narrative] if narrative else [])])
+
+
+def _aic_narrative_description(record):
+    thumbnail = record.get("thumbnail") or {}
+    return _description_text(
+        record.get("description") or record.get("short_description")
+        or thumbnail.get("alt_text")
+    )
+
+
+def _aic_has_sufficient_concept_coverage(query, record):
+    """Reject clear one-token AIC false positives from multi-concept queries."""
+    query_concepts = concepts(query)
+    if len(query_concepts) <= 1:
+        return True
+    matched = query_concepts & concepts(_aic_search_text(record))
+    if len(query_concepts) == 2:
+        return len(matched) == 2
+    return len(matched) >= 2 and len(matched) * 3 >= len(query_concepts) * 2
+
+
 def aic(query, need, cue=None):
+    candidate_limit = min(
+        AIC_SEARCH_MAX_CANDIDATES,
+        max(AIC_SEARCH_MIN_CANDIDATES, need * AIC_SEARCH_CANDIDATE_MULTIPLIER),
+    )
     d = _get_json(f"https://api.artic.edu/api/v1/artworks/search?q={_q(query)}"
-                  f"&limit={need * 2}&fields=id,title,artist_display,date_display,"
+                  f"&limit={candidate_limit}&fields=id,title,artist_display,date_display,"
                   f"medium_display,image_id,is_public_domain,thumbnail,description,"
-                  f"short_description", "aic")
+                  f"short_description,subject_titles,term_titles", "aic")
     if _aic_search_is_fallback(d):
         return []
-    artworks = [a for a in _aic_relevant_search_records(d)
-                if a.get("image_id") and a.get("is_public_domain")][:need]
+    artworks = [
+        a for a in _aic_relevant_search_records(d)
+        if a.get("image_id") and a.get("is_public_domain")
+        and _aic_has_sufficient_concept_coverage(query, a)
+    ][:need]
     artwork_ids = [a.get("id") for a in artworks]
     # These are independent remote indexes. Start both immediately so latency
     # is the slower lookup rather than the sum of two sequential lookups.
@@ -465,22 +651,26 @@ def aic(query, need, cue=None):
             preview_width = wayback_preview["width"]
             preview_height = wayback_preview["height"]
         else:
-            image_url = f"{iiif}/full/1686,/0/default.jpg"
-            thumb_url = f"{iiif}/full/843,/0/default.jpg"
+            # AIC rejects width-only requests that would upscale a small
+            # original. A confined box returns the native image instead.
+            image_url = f"{iiif}/full/!1686,1686/0/default.jpg"
+            thumb_url = f"{iiif}/full/!843,843/0/default.jpg"
             delivery = "aic"
             preview_width = preview_height = 0
         page_url = f"https://www.artic.edu/artworks/{a['id']}"
         out.append({"source": "aic", "source_id": str(a["id"]),
                     "title": a.get("title", ""), "artist": a.get("artist_display", ""),
                     "date": a.get("date_display", ""), "medium": a.get("medium_display", ""),
-                    "description": _description_text(
-                        a.get("description") or a.get("short_description")
-                        or thumbnail.get("alt_text")
-                    ),
+                    "description": _aic_narrative_description(a),
+                    "search_text": {
+                        "Controlled term": _aic_match_metadata(a, query),
+                        "Provider metadata": _aic_search_text(a),
+                    },
                     "license": "PD/CC0",
                     "page_url": page_url,
                     "image_url": image_url,
                     "thumb_url": thumb_url,
+                    "fallback_image_url": f"{iiif}/full/!843,843/0/default.jpg",
                     "placeholder_url": thumbnail.get("lqip", ""),
                     "image_delivery": delivery,
                     "full_resolution_url": page_url,
@@ -492,21 +682,83 @@ def aic(query, need, cue=None):
 
 # ---------------- Statens Museum for Kunst ----------------
 
+_SMK_RUNE_FORMS = {
+    "rune", "runes", "runic", "runer", "runerne", "runesten", "runestone",
+    "runestones",
+}
+
+
+def _smk_runes_hit_is_supported(record, enrichments=()):
+    """Reject the known SMK ``runes`` -> OCR ``RUN`` stem collision."""
+    catalog_values = []
+    for field in (
+        "titles", "title", "description", "content_description", "subjects",
+        "inscriptions", "notes",
+    ):
+        catalog_values.extend(_wellcome_text_values(record.get(field)))
+    enrichment_values = []
+    for enrichment in enrichments or ():
+        enrichment_values.extend(_wellcome_text_values(enrichment.get("data")))
+    tokens = {
+        token
+        for value in (*catalog_values, *enrichment_values)
+        for token in _wellcome_search_tokens(value)
+    }
+    return bool(tokens & _SMK_RUNE_FORMS)
+
+
 def smk(query, need, cue=None):
+    verify_runes = _wellcome_search_tokens(query) == ["runes"]
+    rows = need * 6 if verify_runes else need * 2
     d = _get_json(f"https://api.smk.dk/api/v1/art/search/?keys={_q(query)}"
-                  f"&filters=%5Bhas_image%3Atrue%5D&rows={need * 2}", "smk")
+                  f"&filters=%5Bhas_image%3Atrue%5D&rows={rows}", "smk")
+    records = list((d or {}).get("items", []))
+    enrichments = {}
+    if verify_runes:
+        unresolved = [
+            str(record.get("object_number") or "") for record in records
+            if record.get("object_number")
+            and not _smk_runes_hit_is_supported(record)
+        ]
+
+        def fetch_enrichment(object_number):
+            url = (
+                "https://enrichment.api.smk.dk/api/enrichment/"
+                + urllib.parse.quote(object_number, safe="")
+            )
+            return _get_json(url, "smk_enrichment") or []
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(6, len(unresolved) or 1)
+        ) as pool:
+            enrichments = dict(zip(unresolved, pool.map(fetch_enrichment, unresolved)))
     out = []
-    for a in (d or {}).get("items", []):
+    for a in records:
         try:
             if not a.get("image_native") and not a.get("image_thumbnail"):
                 continue
+            object_number = str(a.get("object_number") or "")
+            if verify_runes and not _smk_runes_hit_is_supported(
+                a, enrichments.get(object_number, ())
+            ):
+                continue
             titles = a.get("titles") or [{}]
             prod = (a.get("production") or [{}])[0]
-            out.append({"source": "smk", "source_id": a.get("object_number", ""),
+            out.append({"source": "smk", "source_id": object_number,
                         "title": titles[0].get("title", ""),
                         "artist": prod.get("creator", "") or ", ".join(a.get("artist") or []),
                         "date": ((a.get("production_date") or [{}])[0] or {}).get("period", ""),
                         "medium": ", ".join(a.get("techniques") or []),
+                        "description": _description_text(
+                            a.get("description") or a.get("content_description")
+                        ),
+                        "search_text": {
+                            field.replace("_", " "): a.get(field)
+                            for field in (
+                                "titles", "description", "content_description",
+                                "subjects", "inscriptions", "notes",
+                            ) if a.get(field)
+                        },
                         "license": "CC0" if a.get("public_domain") else "unknown",
                         "page_url": a.get("frontend_url", ""),
                         "image_url": a.get("image_native") or a.get("image_thumbnail"),
@@ -514,7 +766,7 @@ def smk(query, need, cue=None):
                         "width": a.get("image_width") or 0, "height": a.get("image_height") or 0})
         except Exception:
             continue
-    return out
+    return out[:need]
 
 # ---------------- Wellcome Collection ----------------
 
@@ -541,12 +793,155 @@ def _wellcome_work_metadata(work):
     return artist, date, medium
 
 
-def wellcome(query, need, cue=None):
-    page_size = min(need * 2, 100)
-    image_url = ("https://api.wellcomecollection.org/catalogue/v2/images?"
-                 + urllib.parse.urlencode({"query": query, "pageSize": page_size}))
-    d = _get_json(image_url, "wellcome")
-    results = (d or {}).get("results", [])
+def _wellcome_text_values(value):
+    if isinstance(value, str):
+        value = _description_text(value)
+        if value:
+            yield value
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            if key in {"id", "type", "url", "identifiers", "identifierType"}:
+                continue
+            yield from _wellcome_text_values(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            yield from _wellcome_text_values(child)
+
+
+def _wellcome_search_text(work, source):
+    """Expose the metadata fields covered by Wellcome's full-text search."""
+    values = []
+    for record in (source, work):
+        for field in (
+            "title", "alternativeTitles", "description", "physicalDescription",
+            "contributors", "production", "subjects", "genres", "notes",
+            "lettering", "edition", "languages",
+        ):
+            values.extend(_wellcome_text_values(record.get(field)))
+    return list(dict.fromkeys(values))
+
+
+def _wellcome_search_tokens(value):
+    """Return accent-folded word tokens for local provider-hit verification."""
+    folded = unicodedata.normalize("NFKD", str(value or ""))
+    folded = "".join(char for char in folded if not unicodedata.combining(char))
+    return re.findall(r"[a-z0-9]+", folded.casefold())
+
+
+def _wellcome_safe_noun_forms(token):
+    """Keep ordinary singular/plural variants without broad stemming.
+
+    Wellcome's English analyzer can reduce ``runes`` all the way to ``run``.
+    These deliberately modest rules accept ``rune``/``runes`` while refusing
+    that semantic collision.  They are only used to verify one-word queries.
+    """
+    forms = {token}
+    if token.endswith("ies") and len(token) > 4:
+        forms.add(token[:-3] + "y")
+    elif token.endswith(("ches", "shes", "xes", "zes", "oes")):
+        forms.add(token[:-2])
+    elif token.endswith("sses"):
+        forms.add(token[:-2])
+    elif token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        forms.add(token[:-1])
+    elif token.endswith("y") and len(token) > 2 and token[-2] not in "aeiou":
+        forms.add(token[:-1] + "ies")
+    elif token.endswith(("ch", "sh", "x", "z", "o")):
+        forms.add(token + "es")
+    else:
+        forms.add(token + "s")
+    return forms
+
+
+def _wellcome_single_term_hit_is_supported(query, search_text):
+    """Reject Wellcome hits supported only by an over-broad English stem."""
+    query_tokens = _wellcome_search_tokens(query)
+    if len(query_tokens) != 1 or len(query_tokens[0]) < 4:
+        return True
+    accepted = _wellcome_safe_noun_forms(query_tokens[0])
+    metadata_tokens = {
+        token
+        for value in search_text
+        for token in _wellcome_search_tokens(value)
+    }
+    return bool(accepted & metadata_tokens)
+
+
+def _wellcome_iiif_base(value):
+    """Return the full-resolution IIIF image base for a Wellcome image URL."""
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    parsed = urllib.parse.urlsplit(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    for marker in ("image", "thumbs"):
+        if marker in parts:
+            index = parts.index(marker)
+            if index + 1 < len(parts):
+                identifier = parts[index + 1]
+                return urllib.parse.urlunsplit((
+                    parsed.scheme, parsed.netloc, f"/image/{identifier}", "", "",
+                ))
+    if value.endswith("/info.json"):
+        return value.rsplit("/info.json", 1)[0]
+    if "/full/" in value:
+        return value.split("/full/", 1)[0]
+    return ""
+
+
+def _wellcome_can_use_work_primary(work):
+    """Only let image-like works replace the provider's matched bitmap.
+
+    A digitized book's work thumbnail is commonly its cover or title page,
+    even when Wellcome's image search matched a separate illustrated plate.
+    ``Pictures`` is an authoritative provider type for image works (including
+    postcards), where selecting the designated primary/front view is useful.
+    Unknown and document-like types deliberately fail closed to the exact
+    image-search hit.
+    """
+    work_type = work.get("workType") or {}
+    return str(work_type.get("label") or "").strip().casefold() == "pictures"
+
+
+def _wellcome_image_candidates(query, need, exact=False):
+    """Follow image result pages so exact verification gets its full budget."""
+    if need <= 0:
+        return []
+    results = []
+    page = 1
+    page_size = min(100, need)
+    while len(results) < need:
+        params = {
+            "query": query,
+            "pageSize": page_size,
+            "page": page,
+        }
+        if exact:
+            params["include"] = (
+                "source.contributors,source.genres,source.subjects"
+            )
+        image_url = (
+            "https://api.wellcomecollection.org/catalogue/v2/images?"
+            + urllib.parse.urlencode(params)
+        )
+        data = _get_json(image_url, "wellcome") or {}
+        page_results = list(data.get("results") or [])
+        results.extend(page_results[:need - len(results)])
+        if not page_results or not data.get("nextPage"):
+            break
+        page += 1
+    return results
+
+
+def wellcome(query, need, cue=None, *, exact_phrases=()):
+    verify_single_term = len(_wellcome_search_tokens(query)) == 1 and not exact_phrases
+    # Replace rejected stem-only hits without changing the caller's requested
+    # result budget.  Exact searches already receive a larger candidate window
+    # from server.search_batch and are verified there.
+    candidate_need = min(400, max(need, need * 3)) if verify_single_term else need
+    results = _wellcome_image_candidates(
+        query, candidate_need, bool(exact_phrases)
+    )
     work_ids = list(dict.fromkeys(
         str((image.get("source") or {}).get("id") or "")
         for image in results
@@ -564,30 +959,48 @@ def wellcome(query, need, cue=None):
         try:
             iid = a["id"]
             src = a.get("source", {}) or {}
-            work = work_by_id.get(str(src.get("id") or ""), {})
+            work_id = str(src.get("id") or "")
+            work = work_by_id.get(work_id, {})
             artist, date, medium = _wellcome_work_metadata(work)
+            search_text = _wellcome_search_text(work, src)
+            if verify_single_term and not _wellcome_single_term_hit_is_supported(
+                query, search_text
+            ):
+                continue
             thumb = (a.get("thumbnail") or {}).get("url", "")
-            # thumbnail.url is the IIIF info.json (image NUMBER, not the
-            # catalogue id) — strip it to get the IIIF base
-            if thumb.endswith("/info.json"):
-                base = thumb.rsplit("/info.json", 1)[0]
-            elif "/full/" in thumb:
-                base = thumb.split("/full/")[0]
-            else:
+            matched_base = _wellcome_iiif_base(thumb)
+            # Image search indexes individual scans, so a postcard reverse can
+            # match the metadata of its (highly relevant) parent picture.  Use
+            # Wellcome's designated primary/front view for picture works while
+            # retaining the matched image as provenance.  For books and other
+            # document-like or unknown types, preserve the exact image hit so a
+            # cover or title-page thumbnail cannot replace an illustrated plate.
+            primary_base = ""
+            if _wellcome_can_use_work_primary(work):
+                primary_base = _wellcome_iiif_base(
+                    (work.get("thumbnail") or {}).get("url", "")
+                )
+            base = primary_base or matched_base
+            if not base:
                 continue
             out.append({"source": "wellcome", "source_id": iid,
+                        "work_id": work_id,
+                        "is_primary_view": bool(primary_base),
+                        "matched_image_url": (f"{matched_base}/full/max/0/default.jpg"
+                                              if matched_base else ""),
                         "title": src.get("title", ""), "artist": artist,
                         "date": date, "medium": medium,
                         "description": _description_text(work.get("description")),
+                        "search_text": search_text,
                         "license": str((((a.get("thumbnail") or {}).get("license")
                                          or {}).get("label") or "CC-BY/PD")),
-                        "page_url": f"https://wellcomecollection.org/works/{src.get('id', '')}/images?id={iid}",
+                        "page_url": f"https://wellcomecollection.org/works/{work_id}",
                         "image_url": f"{base}/full/max/0/default.jpg",
                         "thumb_url": f"{base}/full/1024,/0/default.jpg",
                         "width": 0, "height": 0})
         except Exception:
             continue
-    return out
+    return out[:need]
 
 # ---------------- Victoria & Albert ----------------
 
@@ -621,16 +1034,23 @@ def vam(query, need, cue=None):
             iiif = a.get("_images", {}).get("_iiif_image_base_url", "")
             if not iiif:
                 continue
+            narrative = _description_text(
+                detail.get("summaryDescription")
+                or detail.get("contentDescription")
+                or detail.get("physicalDescription")
+                or detail.get("briefDescription")
+            )
             out.append({"source": "vam", "source_id": a.get("systemNumber", ""),
                         "title": a.get("_primaryTitle", "") or a.get("objectType", ""),
                         "artist": (a.get("_primaryMaker") or {}).get("name", ""),
                         "date": a.get("_primaryDate", ""), "medium": a.get("objectType", ""),
-                        "description": _description_text(
-                            detail.get("summaryDescription")
-                            or detail.get("contentDescription")
-                            or detail.get("physicalDescription")
-                            or detail.get("briefDescription")
-                        ),
+                        "description": narrative,
+                        "search_text": {
+                            "Description": narrative,
+                            "Object history": detail.get("objectHistory"),
+                            "Subjects": detail.get("subjects"),
+                            "Categories": detail.get("categories"),
+                        },
                         "license": "unknown",
                         "page_url": f"https://collections.vam.ac.uk/item/{a.get('systemNumber', '')}",
                         "image_url": f"{iiif}full/full/0/default.jpg",
@@ -752,56 +1172,166 @@ def _rijks_description(obj):
     candidates.sort(key=lambda candidate: candidate[0])
     return candidates[0][1] if candidates else ""
 
+
+def _rijks_query_description(obj, query):
+    """Return the field-local Rijks passage that actually caused the match."""
+    phrase = _rijks_normalize_phrase(query)
+    if not phrase:
+        return ""
+    candidates = []
+
+    def walk(value, inherited_languages=()):
+        if isinstance(value, dict):
+            own_languages = tuple(
+                item.get("id", "") for item in value.get("language") or []
+                if isinstance(item, dict)
+            )
+            languages = own_languages or inherited_languages
+            if value.get("type") == "LinguisticObject":
+                content = _description_text(value.get("content"))
+                normalized = _rijks_normalize_phrase(content)
+                if content and f" {phrase} " in f" {normalized} ":
+                    candidates.append((_AAT_EN not in languages, content))
+            for child in value.values():
+                walk(child, languages)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child, inherited_languages)
+
+    walk(obj.get("subject_of") or [])
+    walk(obj.get("referred_to_by") or [])
+    candidates.sort(key=lambda candidate: candidate[0])
+    return candidates[0][1] if candidates else ""
+
+
+def _rijks_normalize_phrase(value):
+    """Normalize text for a contiguous, whole-token phrase comparison."""
+    value = html.unescape(re.sub(r"<[^>]+>", " ", str(value or "")))
+    return " ".join(re.sub(r"[^\w]+", " ", value.casefold()).split())
+
+
+def _rijks_phrase_matches(obj, query):
+    """Match a query within one Rijks title/description, never across fields."""
+    phrase = _rijks_normalize_phrase(query)
+    if not phrase:
+        return False
+
+    texts = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            if value.get("type") in ("Name", "LinguisticObject"):
+                content = value.get("content")
+                if content:
+                    texts.append(content)
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    # These are the Linked Art locations used for object titles and descriptive
+    # text. Keep each scalar separate so adjacent fields cannot form a match.
+    walk(obj.get("identified_by") or [])
+    walk(obj.get("subject_of") or [])
+    walk(obj.get("referred_to_by") or [])
+    needle = f" {phrase} "
+    return any(needle in f" {_rijks_normalize_phrase(text)} " for text in texts)
+
+
+def _rijks_search_ids(param, query, limit):
+    """Return up to limit unique search IDs, following Linked Art pages."""
+    url = ("https://data.rijksmuseum.nl/search/collection?"
+           + urllib.parse.urlencode({
+               param: query,
+               "imageAvailable": "true",
+           }))
+    out = []
+    seen = set()
+    while url and len(out) < limit:
+        data = _get_json(url, "rijksmuseum", headers=_LD) or {}
+        for item in data.get("orderedItems") or []:
+            lod_id = item.get("id", "")
+            if lod_id and lod_id not in seen:
+                seen.add(lod_id)
+                out.append(lod_id)
+                if len(out) >= limit:
+                    break
+        next_url = ((data.get("next") or {}).get("id") or "")
+        url = next_url if next_url and next_url != url else ""
+    return out
+
+
 def rijksmuseum(query, need, cue=None):
     out = []
-    for param in ("description", "title"):
-        d = _get_json("https://data.rijksmuseum.nl/search/collection?"
-                      + urllib.parse.urlencode({param: query, "imageAvailable": "true"}),
-                      "rijksmuseum", headers=_LD)
-        for it in ((d or {}).get("orderedItems") or [])[:need * 3]:
-            if len(out) >= need * 2:
-                break
-            try:
-                o = _rijks_get(it["id"])
-                if not o:
-                    continue
-                vi = _rijks_get((o.get("shows") or [{}])[0].get("id", ""))
-                do = _rijks_get(((vi or {}).get("digitally_shown_by")
-                                 or [{}])[0].get("id", ""))
-                iiif = ((do or {}).get("access_point") or [{}])[0].get("id", "")
-                if "/full/" not in iiif:
-                    continue
-                base = iiif.split("/full/")[0]
-                lic = "unknown"
-                for r in (vi.get("subject_to") or []):
-                    for c in r.get("classified_as") or []:
-                        cid = c.get("id", "")
-                        if "publicdomain/mark" in cid: lic = "PD"
-                        elif "publicdomain/zero" in cid: lic = "CC0"
-                        elif "licenses/by" in cid: lic = "CC-BY"
-                prod = o.get("produced_by") or {}
-                artist = ""
-                for part in (prod.get("part") or [prod]):
-                    for p in part.get("carried_out_by") or []:
-                        artist = artist or _rijks_notation_en(p)
-                objnum = next((i["content"] for i in o.get("identified_by") or []
-                               if i.get("type") == "Identifier" and i.get("content")), "")
-                out.append({"source": "rijksmuseum",
-                            "source_id": objnum or it["id"],
-                            "title": _rijks_en(o.get("identified_by")),
-                            "artist": artist,
-                            "date": _rijks_en((prod.get("timespan") or {}).get("identified_by")),
-                            "medium": "", "license": lic,
-                            "description": _rijks_description(o),
-                            "page_url": f"https://www.rijksmuseum.nl/en/collection/{objnum}"
-                                        if objnum else it["id"],
-                            "image_url": f"{base}/full/max/0/default.jpg",
-                            "thumb_url": f"{base}/full/1024,/0/default.jpg",
-                            "width": 0, "height": 0})
-            except Exception:
+    target = max(need * 2, need)
+    # Search both fields instead of letting description false positives prevent
+    # title retrieval. Four candidate windows per requested output provides
+    # room for phrase filtering; _rijks_search_ids paginates for large windows.
+    per_field_limit = max(need * 4, 20)
+    candidate_ids = []
+    seen_ids = set()
+    field_ids = {
+        param: _rijks_search_ids(param, query, per_field_limit)
+        for param in ("title", "description")
+    }
+    # Interleave ranks so a long run of description false positives cannot
+    # consume the verification budget before strong title matches are tried.
+    for index in range(max((len(ids) for ids in field_ids.values()), default=0)):
+        for param in ("title", "description"):
+            ids = field_ids[param]
+            if index >= len(ids):
                 continue
-        if out:
+            lod_id = ids[index]
+            if lod_id not in seen_ids:
+                seen_ids.add(lod_id)
+                candidate_ids.append(lod_id)
+
+    for lod_id in candidate_ids:
+        if len(out) >= target:
             break
+        try:
+            o = _rijks_get(lod_id)
+            if not o or not _rijks_phrase_matches(o, query):
+                continue
+            vi = _rijks_get((o.get("shows") or [{}])[0].get("id", ""))
+            do = _rijks_get(((vi or {}).get("digitally_shown_by")
+                             or [{}])[0].get("id", ""))
+            iiif = ((do or {}).get("access_point") or [{}])[0].get("id", "")
+            if "/full/" not in iiif:
+                continue
+            base = iiif.split("/full/")[0]
+            lic = "unknown"
+            for r in (vi.get("subject_to") or []):
+                for c in r.get("classified_as") or []:
+                    cid = c.get("id", "")
+                    if "publicdomain/mark" in cid: lic = "PD"
+                    elif "publicdomain/zero" in cid: lic = "CC0"
+                    elif "licenses/by" in cid: lic = "CC-BY"
+            prod = o.get("produced_by") or {}
+            artist = ""
+            for part in (prod.get("part") or [prod]):
+                for p in part.get("carried_out_by") or []:
+                    artist = artist or _rijks_notation_en(p)
+            objnum = next((i["content"] for i in o.get("identified_by") or []
+                           if i.get("type") == "Identifier" and i.get("content")), "")
+            out.append({"source": "rijksmuseum",
+                        "source_id": objnum or lod_id,
+                        "title": _rijks_en(o.get("identified_by")),
+                        "artist": artist,
+                        "date": _rijks_en((prod.get("timespan") or {}).get("identified_by")),
+                        "medium": "", "license": lic,
+                        "description": (
+                            _rijks_query_description(o, query)
+                            or _rijks_description(o)
+                        ),
+                        "page_url": f"https://www.rijksmuseum.nl/en/collection/{objnum}"
+                                    if objnum else lod_id,
+                        "image_url": f"{base}/full/max/0/default.jpg",
+                        "thumb_url": f"{base}/full/1024,/0/default.jpg",
+                        "width": 0, "height": 0})
+        except Exception:
+            continue
     return out
 
 # ---------------- gnosisvn.org WordPress media library (house) ----------------
@@ -856,6 +1386,7 @@ def gnosis(query, need, cue=None):
 def _gnosis_live(query, need, cue=None):
     import html as _html, re as _re
     from gnosis_catalog import artwork_metadata
+    verify_single_term = len(_wellcome_search_tokens(query)) == 1
     d = _get_json("https://gnosisvn.org/wp-json/wp/v2/media?"
                   + urllib.parse.urlencode({"search": query, "media_type": "image",
                                             "per_page": min(need * 2, 50)}),
@@ -879,15 +1410,20 @@ def _gnosis_live(query, need, cue=None):
                     r"<[^>]+>", " ", (m.get("description") or {}).get("rendered", "")
                 ))
             english = " ".join(english.split())
+            title = _html.unescape((m.get("title") or {}).get("rendered", ""))
+            if verify_single_term and not _wellcome_single_term_hit_is_supported(
+                query, [title, english, cap]
+            ):
+                continue
             image_meta = (md.get("image_meta") or {})
             artist, artwork_date = artwork_metadata(
-                title=_html.unescape((m.get("title") or {}).get("rendered", "")),
+                title=title,
                 description=english, caption=cap,
                 credit=image_meta.get("credit", ""),
                 metadata_caption=image_meta.get("caption", ""),
             )
             out.append({"source": "gnosis", "source_id": str(m["id"]),
-                        "title": _html.unescape((m.get("title") or {}).get("rendered", "")),
+                        "title": title,
                         "artist": artist, "date": artwork_date,
                         "medium": " · ".join(filter(None, [english[:500], cap[:160]])),
                         "description": " · ".join(filter(None, [english, cap])),
@@ -905,6 +1441,90 @@ def _gnosis_live(query, need, cue=None):
 _EU_LICENSE = [("publicdomain/mark", "PD"), ("publicdomain/zero", "CC0"),
                ("licenses/by-sa", "CC-BY-SA"), ("licenses/by-nc", "CC-BY-NC"),
                ("licenses/by", "CC-BY")]
+_NHM_DATA_PROVIDER = "the trustees of the natural history museum, london"
+_NHM_COLLECTION_RESOURCE = "05ff2255-c38a-40c9-b657-4ccb55ab2feb"
+_NHM_MEDIA_ASSET = re.compile(
+    r"^/media/([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/?$",
+    re.IGNORECASE,
+)
+
+
+def _europeana_nhm_asset_id(item):
+    """Return the NHM media UUID only for the exact trusted provider route."""
+    providers = {
+        str(value or "").strip().casefold()
+        for value in (item.get("dataProvider") or [])
+    }
+    if _NHM_DATA_PROVIDER not in providers:
+        return ""
+    image_url = str((item.get("edmIsShownBy") or [""])[0] or "")
+    parsed = urllib.parse.urlsplit(image_url)
+    if parsed.scheme != "https" or (parsed.hostname or "").casefold() != "data.nhm.ac.uk":
+        return ""
+    matched = _NHM_MEDIA_ASSET.fullmatch(parsed.path)
+    return matched.group(1).casefold() if matched else ""
+
+
+def _nhm_media_categories(asset_id):
+    """Read the provider's authoritative category for one exact media asset."""
+    data = _get_json(
+        "https://data.nhm.ac.uk/api/3/action/datastore_search?"
+        + urllib.parse.urlencode({
+            "resource_id": _NHM_COLLECTION_RESOURCE,
+            "q": asset_id,
+            "limit": 5,
+            "fields": "associatedMedia",
+        }),
+        "nhm_media",
+        headers={"User-Agent": "Gnosis-Image-Search/0.2"},
+        timeout=12,
+        attempts=2,
+    )
+    categories = set()
+    records = (((data or {}).get("result") or {}).get("records") or [])
+    for record in records:
+        for media in record.get("associatedMedia") or []:
+            if str(media.get("assetID") or "").casefold() != asset_id:
+                continue
+            category = str(media.get("category") or "").strip().casefold()
+            if category:
+                categories.add(category)
+    return categories
+
+
+def _filter_europeana_nhm_registers(items):
+    """Exclude NHM register scans while retaining specimen media and failures."""
+    assets = {
+        asset_id for item in items
+        if (asset_id := _europeana_nhm_asset_id(item))
+    }
+    if not assets:
+        return list(items)
+    categories = {}
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(3, len(assets)),
+    ) as pool:
+        futures = {
+            pool.submit(_nhm_media_categories, asset_id): asset_id
+            for asset_id in assets
+        }
+        for future in concurrent.futures.as_completed(futures):
+            asset_id = futures[future]
+            try:
+                categories[asset_id] = future.result()
+            except Exception:
+                categories[asset_id] = set()
+    return [
+        item for item in items
+        if categories.get(_europeana_nhm_asset_id(item)) != {"register"}
+    ]
+
+
+def _europeana_is_pdf_delivery(item):
+    """Reject document files misclassified upstream as image deliveries."""
+    image_url = str((item.get("edmIsShownBy") or [""])[0] or "")
+    return urllib.parse.urlsplit(image_url).path.casefold().endswith(".pdf")
+
 
 def europeana(query, need, cue=None):
     import keys as _keys
@@ -914,7 +1534,7 @@ def europeana(query, need, cue=None):
     d = _get_json(
         "https://api.europeana.eu/record/v2/search.json?"
         + urllib.parse.urlencode(
-            {"query": query, "rows": min(need * 2, 50),
+            {"query": query, "rows": min(max(need * 4, 12), 50),
              "media": "true", "qf": "TYPE:IMAGE",
              "reusability": "open", "profile": "rich"}),
         "europeana", headers={"X-Api-Key": k},
@@ -922,7 +1542,12 @@ def europeana(query, need, cue=None):
     if _europeana_access_error_message(d):
         raise EuropeanaAccessError()
     out = []
-    for a in (d or {}).get("items", []):
+    items = [
+        item for item in (d or {}).get("items", [])
+        if not _europeana_is_pdf_delivery(item)
+    ]
+    items = _filter_europeana_nhm_registers(items)
+    for a in items:
         try:
             img = (a.get("edmIsShownBy") or [""])[0]
             if not img:
@@ -938,6 +1563,16 @@ def europeana(query, need, cue=None):
                             a.get("dcDescriptionLangAware")
                             or a.get("dcDescription")
                         ),
+                        "search_text": {
+                            "Description": (
+                                a.get("dcDescriptionLangAware")
+                                or a.get("dcDescription")
+                            ),
+                            "Subject": a.get("dcSubjectLangAware") or a.get("dcSubject"),
+                            "Type": a.get("dcTypeLangAware") or a.get("dcType"),
+                            "Alternative title": a.get("dctermsAlternative"),
+                            "Provider": a.get("dataProvider"),
+                        },
                         "license": lic,
                         "page_url": (a.get("edmIsShownAt") or [""])[0]
                                     or f'https://www.europeana.eu/item{a.get("id", "")}',

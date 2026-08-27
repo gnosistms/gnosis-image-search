@@ -47,6 +47,10 @@ _COMMONS_METADATA_FIELDS = (
     "ObjectName", "ImageDescription", "Description", "Categories",
     "DepictedPeople", "DepictedPlace", "Credit", "Artist",
 )
+_COMMONS_PRIMARY_METADATA_FIELDS = (
+    "ObjectName", "ImageDescription", "Description",
+    "DepictedPeople", "DepictedPlace", "Artist",
+)
 GETTY_SEARCH_URL = "https://www.getty.edu/art/collection/api/search"
 GETTY_COLLECTION_URL = "https://www.getty.edu/art/collection"
 GETTY_IIIF_IMAGE_URL = "https://media.getty.edu/iiif/image"
@@ -362,7 +366,10 @@ def _universal_comasonry_catalog_needs_refresh(
         stale = time.time() - path.stat().st_mtime > UNIVERSAL_COMASONRY_CATALOG_TTL
     except OSError:
         stale = True
-    missing_descriptions = any("search_text" not in item for item in records)
+    # Older caches could contain an empty ``search_text`` after a failed or
+    # deferred crawl, which looked complete forever.  The explicit marker
+    # distinguishes an attempted detail-page extraction from legacy records.
+    missing_descriptions = any(not item.get("detail_enriched") for item in records)
     return stale or missing_descriptions, stale
 
 
@@ -407,24 +414,27 @@ def _build_universal_comasonry_catalog(*, enrich: bool = True) -> list[dict]:
     return _enrich_universal_comasonry_catalog(records) if enrich else records
 
 
+def _enrich_universal_comasonry_item(item: dict) -> dict:
+    enriched = dict(item)
+    try:
+        document = _universal_comasonry_fetch_text(item["page_url"])
+        description = parse_universal_comasonry_detail_page(document)
+        enriched["search_text"] = description
+        enriched["description"] = description
+    except Exception:
+        enriched["search_text"] = ""
+        enriched["description"] = ""
+    enriched["detail_enriched"] = True
+    return enriched
+
+
 def _enrich_universal_comasonry_catalog(records: list[dict]) -> list[dict]:
-    def fetch_description(item: dict) -> dict:
-        enriched = dict(item)
-        try:
-            document = _universal_comasonry_fetch_text(item["page_url"])
-            description = parse_universal_comasonry_detail_page(document)
-            enriched["search_text"] = description
-            enriched["description"] = description
-        except Exception:
-            enriched["search_text"] = ""
-            enriched["description"] = ""
-        return enriched
 
     # Descriptive captions live only on the individual image pages. Fetch them
     # once while building the weekly cache so subject/name searches can find
     # images whose thumbnail titles use different terminology.
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        records = list(executor.map(fetch_description, records))
+        records = list(executor.map(_enrich_universal_comasonry_item, records))
     records.sort(key=lambda item: (item["medium"].casefold(), item["title"].casefold()))
     return records
 
@@ -494,19 +504,30 @@ def _load_universal_comasonry_catalog() -> list[dict]:
 
 
 def _universal_comasonry_match_score(query: str, item: dict) -> tuple[float, str]:
-    phrase = " ".join(query.casefold().split())
-    haystack = " ".join((
+    query_words = list(dict.fromkeys(_commons_search_tokens(query)))
+    metadata_text = " ".join((
         str(item.get("title") or ""), str(item.get("medium") or ""),
         str(item.get("page_url") or "").replace("-", " "),
-        str(item.get("search_text") or ""),
-    )).casefold()
-    tokens = [token for token in re.findall(r"[\w']+", phrase) if len(token) > 1]
-    matched = sum(token in haystack for token in tokens)
-    if phrase and phrase in haystack:
-        return 100.0 + len(tokens), str(item.get("title") or "").casefold()
-    if not tokens or not matched:
+        str(item.get("search_text") or item.get("description") or ""),
+    ))
+    metadata_words = list(dict.fromkeys(_commons_search_tokens(metadata_text)))
+    if not query_words or not metadata_words:
         return 0.0, str(item.get("title") or "").casefold()
-    return matched / len(tokens), str(item.get("title") or "").casefold()
+    matched = sum(
+        any(_commons_word_matches(query_word, word) for word in metadata_words)
+        for query_word in query_words
+    )
+    # Require coherent concept coverage, rather than admitting any substring.
+    # In particular, "tree" must not match "streets" and a generic "of"
+    # must not help a result for "Kabbalistic Tree of Life".
+    required = 1 if len(query_words) <= 2 else (len(query_words) * 2 + 2) // 3
+    if matched < required:
+        return 0.0, str(item.get("title") or "").casefold()
+    normalized_query = " ".join(query_words)
+    normalized_metadata = " ".join(_commons_search_tokens(metadata_text))
+    if normalized_query in normalized_metadata:
+        return 100.0 + len(query_words), str(item.get("title") or "").casefold()
+    return matched / len(query_words), str(item.get("title") or "").casefold()
 
 
 def universal_comasonry(query: str, need: int, cue=None) -> list[dict]:
@@ -517,7 +538,15 @@ def universal_comasonry(query: str, need: int, cue=None) -> list[dict]:
         if score:
             ranked.append((score, title, item))
     ranked.sort(key=lambda row: (-row[0], row[1]))
-    return [row[2] for row in ranked[:max(need * 2, need)]]
+    selected = [row[2] for row in ranked[:max(need * 2, need)]]
+    # Do not make a user wait for the weekly background crawl before captions
+    # are useful. Enrich only the small set actually being returned.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(selected) or 1)) as executor:
+        return list(executor.map(
+            lambda item: item if item.get("detail_enriched")
+            else _enrich_universal_comasonry_item(item),
+            selected,
+        ))
 
 
 def _clean_url(value: str) -> str:
@@ -526,6 +555,17 @@ def _clean_url(value: str) -> str:
 
 
 def _clean_description(value) -> str:
+    if isinstance(value, dict):
+        # Museum APIs commonly return language-keyed maps. Prefer English,
+        # then a provider default, before falling back to another language.
+        ordered = []
+        for key, item in value.items():
+            language = str(key).replace("_", "-").casefold()
+            priority = 0 if language == "en" or language.startswith("en-") else (
+                1 if language in {"def", "default", "und"} else 2
+            )
+            ordered.append((priority, item))
+        value = [item for _priority, item in sorted(ordered, key=lambda row: row[0])]
     if isinstance(value, (list, tuple)):
         for item in value:
             text = _clean_description(item)
@@ -534,6 +574,28 @@ def _clean_description(value) -> str:
         return ""
     text = _HTML_TAG.sub(" ", str(value or ""))
     return " ".join(html.unescape(text).split())
+
+
+def _harvard_description(record: dict, image: dict | None = None) -> str:
+    """Prefer narrative/English context and retain catalog alternate titles."""
+    image = image or {}
+    narrative = _clean_description(
+        record.get("description") or record.get("labeltext")
+        or record.get("commentary") or image.get("description")
+        or image.get("alttext") or image.get("publiccaption")
+    )
+    main_title = str(record.get("title") or "").strip().casefold()
+    alternate_titles = []
+    for title in sorted(
+        record.get("titles") or [],
+        key=lambda value: _as_int(value.get("displayorder")) or 9999,
+    ):
+        text = _clean_description(title.get("title"))
+        if not text or text.casefold() == main_title:
+            continue
+        kind = _clean_description(title.get("titletype")) or "Other title"
+        alternate_titles.append(f"{kind}: {text}.")
+    return " ".join(filter(None, [narrative, *alternate_titles]))
 
 
 def _as_int(value) -> int:
@@ -613,12 +675,116 @@ def commons_metadata_is_relevant(query: str, metadata_text: str) -> bool:
     return matched >= required
 
 
-def _commons_metadata_text(page: dict, info: dict) -> str:
+def _commons_metadata_text(
+    page: dict, info: dict, fields: tuple[str, ...] = _COMMONS_METADATA_FIELDS,
+) -> str:
     metadata = info.get("extmetadata") or {}
     return " ".join(filter(None, (
         str(page.get("title") or "").removeprefix("File:").replace("_", " "),
-        *(_metadata_value(metadata, name) for name in _COMMONS_METADATA_FIELDS),
+        *(_metadata_value(metadata, name) for name in fields),
     )))
+
+
+def _commons_item_metadata_is_relevant(query: str, page: dict, info: dict) -> bool:
+    """Do not let a broad Commons category create an otherwise unsupported hit."""
+    primary = _commons_metadata_text(page, info, _COMMONS_PRIMARY_METADATA_FIELDS)
+    if not commons_metadata_is_relevant(query, primary):
+        return False
+    return commons_metadata_is_relevant(query, _commons_metadata_text(page, info))
+
+
+_COMMONS_DPLA_NUMBERED_PAGE = re.compile(
+    r"^(?P<parent>.+?)\s+-\s+DPLA\s+-\s[0-9a-f]{16,}\s+"
+    r"\(page\s+\d+\)\.(?:jpe?g|png|webp)$",
+    re.IGNORECASE,
+)
+_COMMONS_PAGE_VISUAL_CUE = re.compile(
+    r"\b(?:illustrat(?:ion|ed)|plate|frontispiece|diagram|map|drawing|"
+    r"photograph|portrait|depict(?:s|ed|ing)?|painting|engraving|etching|"
+    r"woodcut|lithograph|print)\b",
+    re.IGNORECASE,
+)
+
+
+def _commons_catalog_fold(value: object) -> str:
+    folded = unicodedata.normalize("NFKD", str(value or ""))
+    folded = "".join(char for char in folded if not unicodedata.combining(char))
+    return " ".join(re.findall(r"[a-z0-9]+", folded.casefold()))
+
+
+def _commons_is_unsubstantiated_document_page(page: dict, info: dict) -> bool:
+    """Reject inherited DPLA book pages lacking page-level visual evidence."""
+    title = str(page.get("title") or "").removeprefix("File:").replace("_", " ")
+    match = _COMMONS_DPLA_NUMBERED_PAGE.fullmatch(title)
+    if not match:
+        return False
+    metadata = info.get("extmetadata") or {}
+    # Explicit depiction fields are page-level evidence even if the surrounding
+    # DPLA import otherwise repeats only the parent document's metadata.
+    if any(_metadata_value(metadata, field) for field in (
+        "DepictedPeople", "DepictedPlace",
+    )):
+        return False
+
+    parent = _commons_catalog_fold(match.group("parent"))
+    for field in ("ObjectName", "ImageDescription", "Description"):
+        value = _commons_catalog_fold(_metadata_value(metadata, field))
+        # Remove the inherited work title before looking for visual cues. A
+        # book called "Illustrations of ..." must not make every page eligible.
+        residual = value.replace(parent, " ") if parent else value
+        if _COMMONS_PAGE_VISUAL_CUE.search(residual):
+            return False
+    return True
+
+
+def _commons_met_object_key(metadata: dict) -> str:
+    """Identify multiple Met photographs of one accessioned object."""
+    categories = _metadata_value(metadata, "Categories")
+    match = re.search(r"\bMET\s+([0-9][0-9A-Za-z.\-]+)", categories)
+    return f"met:{match.group(1).casefold()}" if match else ""
+
+
+def _commons_file_view_order(title: str) -> tuple[int, str]:
+    """Met's lower DT asset is normally the primary/front object view."""
+    match = re.search(r"\bDT(\d+)\b", title, re.IGNORECASE)
+    return (int(match.group(1)), title.casefold()) if match else (10**12, title.casefold())
+
+
+def _query_centered_excerpt(value: str, query: str, limit: int = 700) -> str:
+    """Keep the part of a long description that explains its search match."""
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    query_words = list(dict.fromkeys(_commons_search_tokens(query)))
+    match = next((
+        candidate for candidate in re.finditer(r"[\w']+", text, re.UNICODE)
+        if any(
+            _commons_word_matches(query_word, candidate.group(0).casefold())
+            for query_word in query_words
+        )
+    ), None)
+    if match is None or match.start() < limit * 2 // 3:
+        return text[:limit].rsplit(" ", 1)[0] + "…"
+
+    # Include the matching sentence, one sentence of setup, and one following
+    # sentence when space permits. This is much more useful to a human judge
+    # than always returning the first N characters of a catalog essay.
+    start = text.rfind(".", 0, match.start())
+    if start > 0:
+        previous = text.rfind(".", 0, start)
+        start = previous + 1 if previous >= 0 else 0
+    else:
+        start = 0
+    end = text.find(".", match.end())
+    if end >= 0:
+        following = text.find(".", end + 1)
+        end = following + 1 if following >= 0 else end + 1
+    else:
+        end = min(len(text), start + limit)
+    excerpt = text[start:end].strip()
+    if len(excerpt) > limit:
+        excerpt = excerpt[:limit].rsplit(" ", 1)[0] + "…"
+    return excerpt
 
 
 def _reusable_commons_license(value: str) -> bool:
@@ -633,6 +799,8 @@ def parse_museum_commons_response(
 ) -> list[dict]:
     """Parse Commons files already constrained to collection + depicts claims."""
     out = []
+    object_positions: dict[str, int] = {}
+    object_orders: dict[str, tuple[int, str]] = {}
     pages = ((data or {}).get("query") or {}).get("pages") or {}
     for page in pages.values():
         try:
@@ -640,8 +808,11 @@ def parse_museum_commons_response(
             if info.get("mime") not in ("image/jpeg", "image/png", "image/webp"):
                 continue
             metadata = info.get("extmetadata") or {}
-            metadata_text = _commons_metadata_text(page, info)
-            if query is not None and not commons_metadata_is_relevant(query, metadata_text):
+            if _commons_is_unsubstantiated_document_page(page, info):
+                continue
+            if query is not None and not _commons_item_metadata_is_relevant(
+                query, page, info
+            ):
                 continue
             license_name = _metadata_value(metadata, "LicenseShortName")
             if not _reusable_commons_license(license_name):
@@ -649,7 +820,11 @@ def parse_museum_commons_response(
             image_url = _clean_url(info.get("url") or "")
             if not image_url:
                 continue
-            out.append({
+            full_description = (
+                _metadata_value(metadata, "ImageDescription")
+                or _metadata_value(metadata, "Description")
+            )
+            item = {
                 "source": "commons",
                 "source_id": str(page.get("title") or ""),
                 "title": str(page.get("title") or "Untitled").removeprefix("File:"),
@@ -657,22 +832,30 @@ def parse_museum_commons_response(
                 "date": _commons_artwork_date(metadata),
                 "medium": _metadata_value(metadata, "ObjectName")
                     or _metadata_value(metadata, "Credit")[:160],
-                "description": (
-                    _metadata_value(metadata, "ImageDescription")
-                    or _metadata_value(metadata, "Description")
-                )[:500],
+                "description": _query_centered_excerpt(
+                    full_description, query or "", 700
+                ),
                 "license": license_name,
                 "page_url": _clean_url(info.get("descriptionurl") or ""),
                 "image_url": image_url,
                 "thumb_url": _clean_url(info.get("thumburl") or image_url),
                 "width": _as_int(info.get("width")),
                 "height": _as_int(info.get("height")),
-            })
+            }
+            object_key = _commons_met_object_key(metadata)
+            view_order = _commons_file_view_order(str(page.get("title") or ""))
+            if object_key and object_key in object_positions:
+                if view_order < object_orders[object_key]:
+                    out[object_positions[object_key]] = item
+                    object_orders[object_key] = view_order
+                continue
+            if object_key:
+                object_positions[object_key] = len(out)
+                object_orders[object_key] = view_order
+            out.append(item)
         except (KeyError, TypeError, ValueError):
             continue
-        if len(out) >= need * 2:
-            break
-    return out
+    return out[:need * 2]
 
 
 def museum_commons(query: str, need: int, cue=None) -> list[dict]:
@@ -731,6 +914,13 @@ def parse_getty_response(data: dict, need: int) -> list[dict]:
                 # at the gallery's maximum width on a 2x display.
                 "thumb_url": f"{image_base}/full/!1200,1200/0/default.jpg",
                 "width": 0, "height": 0,
+                # Parent records represent albums, manuscripts, or volumes.
+                # Their search hit can come from a child image while the
+                # manifest thumbnail is only the cover. Resolve these after
+                # parsing so we can return the matching child canvas instead.
+                "_getty_is_parent": bool(record.get("is_parent")),
+                "_getty_manifest_url": _clean_url(manifest.get("url") or ""),
+                "_getty_manifest_items": _as_int(manifest.get("numItems")),
             })
         except (KeyError, TypeError, ValueError):
             continue
@@ -739,27 +929,186 @@ def parse_getty_response(data: dict, need: int) -> list[dict]:
     return out
 
 
+def _iiif_language_text(value: object) -> str:
+    if isinstance(value, dict):
+        preferred = value.get("en") or value.get("none") or value.get("@none")
+        if preferred is None and value:
+            preferred = next(iter(value.values()))
+        return _iiif_language_text(preferred)
+    if isinstance(value, (list, tuple)):
+        return " ".join(filter(None, (_iiif_language_text(item) for item in value)))
+    return " ".join(str(value or "").split())
+
+
+def _getty_manifest_matching_page(manifest: dict, query: str) -> dict | None:
+    """Select one coherently matching child canvas from a Getty IIIF volume."""
+    query_words = list(dict.fromkeys(_commons_search_tokens(query)))
+    if not query_words:
+        return None
+    canvases = {
+        str(canvas.get("id") or ""): canvas
+        for canvas in manifest.get("items") or []
+        if isinstance(canvas, dict) and canvas.get("id")
+    }
+    labeled_canvases = []
+
+    def visit_range_item(value: dict) -> None:
+        if not isinstance(value, dict):
+            return
+        if value.get("type") == "Canvas":
+            canvas = canvases.get(str(value.get("id") or ""))
+            label = _iiif_language_text(value.get("label"))
+            if canvas and label:
+                labeled_canvases.append((label, canvas))
+            return
+        for child in value.get("items") or []:
+            visit_range_item(child)
+
+    for structure in manifest.get("structures") or []:
+        visit_range_item(structure)
+    if not labeled_canvases:
+        labeled_canvases = [
+            (_iiif_language_text(canvas.get("label")), canvas)
+            for canvas in canvases.values()
+            if _iiif_language_text(canvas.get("label")) not in {"", "Main View"}
+        ]
+
+    matches = []
+    for label, canvas in labeled_canvases:
+        label_words = list(dict.fromkeys(_commons_search_tokens(label)))
+        # Every query concept must occur in the same child label. This avoids
+        # treating "Sun-lodge" on one page and "Buffalo-stones" on another as
+        # a coherent result for "Aztec Sun Stone".
+        if label_words and all(
+            any(_commons_word_matches(query_word, word) for word in label_words)
+            for query_word in query_words
+        ):
+            matches.append((len(label_words), label.casefold(), label, canvas))
+    if not matches:
+        return None
+    _length, _folded, label, canvas = min(matches)
+    annotations = (canvas.get("items") or [{}])[0].get("items") or []
+    body = (annotations[0].get("body") or {}) if annotations else {}
+    if body.get("type") == "Choice":
+        body = (body.get("items") or [{}])[0]
+    image_url = _clean_url(body.get("id") or "")
+    if not image_url:
+        return None
+    thumb_url = image_url.replace(
+        "/full/max/0/default.", "/full/!1200,1200/0/default."
+    )
+    return {
+        "title": label,
+        "image_url": image_url,
+        "thumb_url": thumb_url,
+        "canvas_id": str(canvas.get("id") or "").rsplit("/", 1)[-1],
+    }
+
+
+def _getty_linked_art_query_context(record: dict, query: str) -> str:
+    """Expose the bounded Linked Art passage that caused a Getty search hit."""
+    query_words = list(dict.fromkeys(_commons_search_tokens(query)))
+    if not query_words:
+        return ""
+    candidates = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            for raw_text in (value.get("content"), value.get("_label")):
+                content = _clean_description(raw_text)
+                if not content:
+                    continue
+                words = _commons_search_tokens(content)
+                matched = {
+                    query_word for query_word in query_words
+                    if any(_commons_word_matches(query_word, word) for word in words)
+                }
+                if matched:
+                    candidates.append((len(matched), len(content), content))
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(record)
+    if not candidates:
+        return ""
+    _matched, _length, text = max(
+        candidates, key=lambda row: (row[0], -row[1], row[2].casefold())
+    )
+    excerpt = _query_centered_excerpt(text, query, 900) or text[:900]
+    return excerpt
+
+
 def getty(query: str, need: int, cue=None) -> list[dict]:
     """Search Getty's website index for independently verified CC0 images."""
     import sources
     url = GETTY_SEARCH_URL + "?" + urllib.parse.urlencode({
-        "q": query, "from": 0, "size": min(max(need * 2, 20), 100),
+        "q": query, "from": 0, "size": min(max(need * 4, 40), 100),
         "open_content": "true", "images": "true", "is_standalone": "true",
     })
-    items = parse_getty_response(sources._get_json(url, "getty") or {}, need)
+    items = parse_getty_response(sources._get_json(url, "getty") or {}, need * 2)
 
-    def fetch_description(item):
+    def resolve_parent(item):
+        if not item.get("_getty_is_parent"):
+            return item
+        manifest_url = item.get("_getty_manifest_url") or ""
+        if not manifest_url or item.get("_getty_manifest_items", 0) <= 1:
+            return None
+        try:
+            page = _getty_manifest_matching_page(
+                sources._get_json(manifest_url, "getty_manifest") or {}, query
+            )
+        except (OSError, ValueError):
+            page = None
+        if not page:
+            return None
+        canvas_id = page.pop("canvas_id")
+        item.update(page)
+        item["source_id"] = f'{item["source_id"]}:{canvas_id}'
+        return item
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(items) or 1)) as pool:
+        items = [item for item in pool.map(resolve_parent, items) if item]
+
+    def fetch_description_and_context(item):
+        description = ""
         try:
             document = _universal_comasonry_fetch_text(item.get("page_url") or "")
-            return parse_getty_detail_page(document)
+            description = parse_getty_detail_page(document)
         except (OSError, ValueError):
-            return ""
+            pass
+        context = ""
+        source_id = str(item.get("source_id") or "")
+        if re.fullmatch(
+            r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}",
+            source_id,
+        ):
+            try:
+                detail_url = (
+                    "https://data.getty.edu/museum/collection/object/" + source_id
+                )
+                detail = sources._get_json(detail_url, "getty_detail") or {}
+                context = _getty_linked_art_query_context(detail, query)
+            except (OSError, ValueError):
+                pass
+        return description, context
 
     count = min(need, len(items))
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, count or 1)) as pool:
-        descriptions = list(pool.map(fetch_description, items[:count]))
-    for item, description in zip(items, descriptions):
+        descriptions = list(pool.map(fetch_description_and_context, items[:count]))
+    for item, (description, context) in zip(items, descriptions):
         item["description"] = description
+        if context:
+            item["search_text"] = {
+                "Provider record": context,
+                "Description": description,
+            }
+    for item in items:
+        item.pop("_getty_is_parent", None)
+        item.pop("_getty_manifest_url", None)
+        item.pop("_getty_manifest_items", None)
     return items
 
 
@@ -773,12 +1122,95 @@ def _loc_image_candidate(value: str) -> tuple[int, int, str] | None:
     return width, height, bare
 
 
+def _loc_is_multipage_text_document(record: dict) -> bool:
+    """Return whether LOC can only offer a document-level text match.
+
+    LOC's ``/photos/`` index includes digitized books because their scans are
+    images.  A query can therefore match anywhere in a book's OCR while the
+    returned image is merely its cover or another representative page.  Until
+    we can identify and return the particular illustrated page that matched,
+    such records are not image-search candidates.
+    """
+    item = record.get("item") or {}
+    formats = {
+        str(value).strip().lower()
+        for value in (item.get("format") or [])
+        if str(value).strip()
+    }
+    original_formats = {
+        str(value).strip().lower()
+        for value in (record.get("original_format") or [])
+        if str(value).strip()
+    }
+    is_text_catalog_record = "text" in formats or "book" in original_formats
+    if not is_text_catalog_record:
+        return False
+
+    for resource in record.get("resources") or []:
+        if not isinstance(resource, dict):
+            continue
+        has_fulltext = bool(
+            resource.get("fulltext_file")
+            or resource.get("fulltext_derivative")
+            or resource.get("text_file")
+        )
+        if has_fulltext and _as_int(resource.get("files")) > 1:
+            return True
+    return False
+
+
+def _loc_is_text_only_catalog_card(record: dict) -> bool:
+    """Reject explicit catalog-card scans without guessing from pixels or OCR."""
+    item = record.get("item") or {}
+
+    def strings(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                yield str(key)
+                yield from strings(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                yield from strings(child)
+        elif value is not None:
+            yield str(value)
+
+    genres = {
+        " ".join(value.casefold().split())
+        for value in strings((
+            record.get("genre"), record.get("subject"),
+            item.get("genre"), item.get("subjects"),
+        ))
+    }
+    classified_as_card = "card catalogs" in genres or "card catalog" in genres
+    if not classified_as_card:
+        return False
+
+    captions = " ".join(
+        str(resource.get("caption") or "")
+        for resource in record.get("resources") or []
+        if isinstance(resource, dict)
+    ).casefold()
+    notes = " ".join(strings((record.get("notes"), item.get("notes")))).casefold()
+    source_collection = " ".join(strings((
+        record.get("source_collection"), item.get("source_collection"),
+    ))).casefold()
+    return (
+        "card catalog" in captions
+        or "digitized catalog card" in notes
+        or "card catalog" in source_collection
+    )
+
+
 def parse_loc_response(data: dict, need: int) -> list[dict]:
     """Convert a loc.gov photo-search response into shared result records."""
     out = []
     for record in (data or {}).get("results", []):
         try:
             if record.get("access_restricted") or not record.get("digitized"):
+                continue
+            if _loc_is_multipage_text_document(record):
+                continue
+            if _loc_is_text_only_catalog_card(record):
                 continue
             images = [candidate for candidate in (
                 _loc_image_candidate(url) for url in record.get("image_url") or []
@@ -813,6 +1245,13 @@ def parse_loc_response(data: dict, need: int) -> list[dict]:
                 "date": str(item.get("date") or record.get("date") or ""),
                 "medium": str(medium or ""), "license": license_name,
                 "description": _clean_description(record.get("description")),
+                "search_text": {
+                    "Description": record.get("description"),
+                    "Subject": record.get("subject") or item.get("subjects"),
+                    "Notes": record.get("notes") or item.get("notes"),
+                    "Other title": item.get("other_titles"),
+                    "Genre": record.get("genre") or item.get("genre"),
+                },
                 "page_url": page_url, "image_url": image_url,
                 "thumb_url": thumb_url, "width": width, "height": height,
                 # Search responses generally expose a derivative; the item
@@ -829,7 +1268,9 @@ def parse_loc_response(data: dict, need: int) -> list[dict]:
 def loc(query: str, need: int, cue=None) -> list[dict]:
     import sources
     url = "https://www.loc.gov/photos/?" + urllib.parse.urlencode({
-        "q": query, "fo": "json", "c": min(max(need * 2, 20), 100),
+        # Fetch extra candidates because document-level OCR matches are
+        # intentionally discarded below.
+        "q": query, "fo": "json", "c": min(max(need * 4, 40), 100),
         "fa": "online-format:image",
     })
     return parse_loc_response(sources._get_json(url, "loc") or {}, need)
@@ -876,11 +1317,21 @@ def parse_harvard_response(data: dict, need: int) -> list[dict]:
                 "artist": str(artist or ""), "date": str(record.get("dated") or ""),
                 "medium": str(record.get("medium") or record.get("technique")
                               or record.get("classification") or ""),
-                "description": _clean_description(
-                    record.get("description") or record.get("labeltext")
-                    or record.get("commentary") or image.get("description")
-                    or image.get("alttext") or image.get("publiccaption")
-                ),
+                "description": _harvard_description(record, image),
+                "search_text": {
+                    "Description": (
+                        record.get("description") or record.get("labeltext")
+                        or record.get("commentary")
+                    ),
+                    "Alternative title": record.get("titles"),
+                    "Classification": record.get("classification"),
+                    "Culture": record.get("culture"),
+                    "Work type": record.get("worktypes"),
+                    "Image caption": (
+                        image.get("description") or image.get("alttext")
+                        or image.get("publiccaption")
+                    ),
+                },
                 "license": copyright_name or "Rights not stated",
                 "page_url": _clean_url(record.get("url") or ""),
                 "image_url": f"{base}/full/full/0/default.jpg",
@@ -913,9 +1364,10 @@ def harvard(query: str, need: int, cue=None) -> list[dict]:
     if not api_key:
         return []
     fields = ",".join((
-        "objectid", "title", "people", "dated", "classification", "technique",
+        "objectid", "title", "titles", "people", "dated", "classification", "technique",
         "medium", "primaryimageurl", "images", "url", "copyright",
         "imagepermissionlevel", "description", "labeltext", "commentary",
+        "culture", "worktypes",
     ))
     url = "https://api.harvardartmuseums.org/object?" + urllib.parse.urlencode({
         "apikey": api_key, "keyword": query, "hasimage": 1,
@@ -1017,6 +1469,12 @@ def parse_yale_record(record: dict) -> dict | None:
         "title": str(record.get("_label") or "Untitled"),
         "artist": artist, "date": date, "medium": medium,
         "description": _linked_art_description(record),
+        "search_text": {
+            "Names": record.get("identified_by"),
+            "Description": record.get("referred_to_by"),
+            "Classification": record.get("classified_as"),
+            "Subject": record.get("shows") or record.get("about"),
+        },
         "license": "Reusable / public domain",
         "page_url": page_url, "image_url": image_url,
         "thumb_url": thumb_url, "width": width, "height": height,
@@ -1086,6 +1544,15 @@ def parse_mia_response(data: dict, need: int) -> list[dict]:
                 "date": str(record.get("dated") or ""),
                 "medium": str(record.get("medium") or record.get("classification") or ""),
                 "description": str(record.get("text") or ""),
+                "search_text": {
+                    "Description": record.get("text"),
+                    "Classification": record.get("classification"),
+                    "Culture": record.get("culture"),
+                    "Country": record.get("country"),
+                    "Style": record.get("style"),
+                    "Tags": record.get("tags"),
+                    "Credit line": record.get("creditline"),
+                },
                 "license": "Public Domain",
                 "page_url": f"https://collections.artsmia.org/art/{source_id}",
                 "image_url": image_url, "thumb_url": thumb_url,

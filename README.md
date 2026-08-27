@@ -55,6 +55,42 @@ decryption key in separate files inside the packaged backend. This keeps the
 key out of source control, request URLs, logs, and casual inspection; it is
 application obfuscation rather than a secure secret store.
 
+### Exact phrase searches
+
+Use the **Exact phrases** control to treat the entire unquoted query as one
+phrase, or put double quotation marks around each required phrase. For example,
+`"guardian of the threshold"` requires those words together and in that order;
+`"text one" "text two"` requires both phrases but allows them in either order
+and in different metadata fields. Matches ignore capitalization, punctuation,
+and whitespace. Provider results are normalized and verified locally before
+they are shown. Unquoted searches with the control off retain the established
+broad-search behavior.
+
+Wrap a query in double quotation marks to require all its words, consecutively
+and in their original order, in Cleveland Museum of Art metadata—for example,
+`"tea service"`. Capitalization, punctuation, and whitespace are ignored, but
+word boundaries are preserved and intervening words do not match. Cleveland's
+API is still used to generate candidates; the adapter paginates the candidates
+and verifies the normalized phrase locally because the upstream API does not
+preserve Azure quoted-query semantics. Exact searches also request Cleveland's
+`smart_parts` view so multipart works are represented by their cover records.
+Unquoted searches retain the broader provider search behavior.
+
+### Provider match evidence and document filtering
+
+The image detail panel keeps the collection's narrative description separate
+from a bounded **Why this matched** excerpt. The excerpt is selected from the
+same provider metadata used by the adapter—including controlled subjects,
+object histories, alternate titles, captions, and notes—so useful matching text
+is not discarded during result normalization. If a provider returns a hit but
+does not expose any matching metadata, the panel says so explicitly.
+
+Provider-native metadata also removes mechanically identifiable non-image
+results before ranking: PDF deliveries, full-text multipage books, catalog-card
+scans, accession-register media, and inherited unillustrated document pages.
+For multi-view picture records, designated primary/front views are preferred
+over reverse scans while retaining the matched asset as provenance.
+
 Release builds are written under `out/full/` and `out/update/`. Windows uses a
 single NSIS installer for both new installations and application updates.
 

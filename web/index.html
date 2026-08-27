@@ -16,6 +16,11 @@
       <input id="query" type="search" maxlength="240" placeholder="Search images" autocomplete="off">
       <button class="search-button" type="submit" aria-label="Search">⌕</button>
     </form>
+    <button id="exact-phrases" class="exact-phrases-toggle" type="button"
+            aria-pressed="false"
+            title="Require each phrase to appear with its words together and in order. Capitalization, punctuation, and whitespace are ignored.">
+      Exact phrases
+    </button>
     <button id="toggle-sources" class="filter-button" type="button" aria-expanded="false">Collections · 0</button>
   </header>
 
@@ -51,9 +56,16 @@
           <input id="hero-query" type="search" maxlength="240" placeholder="What would you like to find?" autocomplete="off" autofocus>
           <button type="submit" aria-label="Search">⌕</button>
         </form>
-        <button id="hero-toggle-sources" class="hero-filter-button" type="button" aria-expanded="false">
-          Choose collections <span id="hero-source-count">· 0 selected</span>
-        </button>
+        <div class="hero-search-options">
+          <button id="hero-exact-phrases" class="exact-phrases-toggle hero-exact-phrases" type="button"
+                  aria-pressed="false"
+                  title="Require each phrase to appear with its words together and in order. Capitalization, punctuation, and whitespace are ignored.">
+            Exact phrases
+          </button>
+          <button id="hero-toggle-sources" class="hero-filter-button" type="button" aria-expanded="false">
+            Choose collections <span id="hero-source-count">· 0 selected</span>
+          </button>
+        </div>
         <!-- The experimental Google Images helper remains implemented at
              /google-helper, but is intentionally not exposed in the app UI. -->
       </div>
@@ -62,7 +74,7 @@
           <img src="/images/getty/annunciation-1390.jpg" width="550" height="800" decoding="async" alt="The Annunciation, about 1390–1395">
         </figure>
         <figure class="hero-art hero-art-two">
-          <img src="/images/getty/annunciation-1660.jpg" width="609" height="800" decoding="async" alt="The Annunciation, about 1660–1665">
+          <img src="/images/getty/flight-into-egypt.jpg" width="639" height="900" decoding="async" alt="The Flight into Egypt, about 1420, by the Spitz Master">
         </figure>
         <figure class="hero-art hero-art-three">
           <img src="/images/getty/madonna-and-child-with-musical-angels.jpg" width="453" height="800" decoding="async" alt="Madonna and Child with Musical Angels, about 1410">
@@ -136,7 +148,15 @@
           <dd id="detail-date"></dd>
         </div>
       </dl>
-      <p id="detail-description" class="detail-description"></p>
+      <section id="detail-description-section" class="detail-text-section">
+        <h2>Provider description</h2>
+        <p id="detail-description" class="detail-description"></p>
+      </section>
+      <section id="detail-match-section" class="detail-text-section">
+        <h2>Why this matched</h2>
+        <p id="detail-match-fields" class="detail-match-fields"></p>
+        <p id="detail-match-context" class="detail-description"></p>
+      </section>
     </div>
     <section id="alternate-section" class="similar-section" hidden>
       <h2>Other versions</h2>

@@ -3,49 +3,16 @@
 from __future__ import annotations
 
 import math
-import re
-import unicodedata
 import urllib.parse
 
-
-STOPWORDS = {
-    "a", "an", "and", "at", "by", "for", "from", "in", "of", "on",
-    "the", "to", "with", "image", "art", "artwork", "painting",
-}
-GNOSIS_NEAR_TIE_BOOST = 0.22
-SYNONYM_GROUPS = (
-    {"escape", "escaping", "escaped", "liberation", "deliverance", "release",
-     "released", "releases", "rescue", "rescued", "free", "freed"},
-    {"prison", "prisoner", "imprisoned", "jail", "cell", "captivity"},
-    {"wisdom", "sophia"},
-    {"engraving", "engraved", "etching", "etched", "print"},
-    {"teaching", "teach", "teacher", "instructing", "instruction"},
+from relevance_terms import (
+    STOPWORDS, SYNONYM_GROUPS, SYNONYMS, coverage as _coverage, fold,
+    matched_query_tokens as _matched_query_tokens, token_matches as _token_matches,
+    tokens,
 )
-SYNONYMS = {word: group for group in SYNONYM_GROUPS for word in group}
 
 
-def fold(text: str) -> str:
-    value = unicodedata.normalize("NFKD", str(text or ""))
-    value = "".join(char for char in value if not unicodedata.combining(char))
-    return " ".join(re.findall(r"[a-z0-9]+", value.lower()))
-
-
-def tokens(text: str) -> set[str]:
-    return {token for token in fold(text).split() if len(token) > 1 and token not in STOPWORDS}
-
-
-def _token_matches(query_token: str, field_tokens: set[str]) -> bool:
-    return bool((SYNONYMS.get(query_token, {query_token})) & field_tokens)
-
-
-def _matched_query_tokens(query_tokens: set[str], field_tokens: set[str]) -> set[str]:
-    return {token for token in query_tokens if _token_matches(token, field_tokens)}
-
-
-def _coverage(query_tokens: set[str], field_tokens: set[str]) -> float:
-    if not query_tokens:
-        return 0.0
-    return len(_matched_query_tokens(query_tokens, field_tokens)) / len(query_tokens)
+GNOSIS_NEAR_TIE_BOOST = 0.22
 
 
 def _metadata_score_result(query: str, item: dict) -> tuple[float, str]:
@@ -149,6 +116,10 @@ def _canonical_url(value: str) -> str:
 
 def dedupe_keys(item: dict) -> list[tuple[str, ...]]:
     keys = []
+    source = str(item.get("source") or "")
+    work_id = str(item.get("work_id") or "")
+    if source and work_id:
+        keys.append(("provider-work", source, work_id))
     image = _canonical_url(item.get("image_url", ""))
     if image:
         keys.append(("image", image))
@@ -166,7 +137,8 @@ def dedupe_keys(item: dict) -> list[tuple[str, ...]]:
 
 def _resolution_key(item: dict) -> tuple:
     width, height = int(item.get("width") or 0), int(item.get("height") or 0)
-    return (bool(width and height), width * height, min(width, height),
+    return (bool(item.get("is_primary_view")), bool(width and height),
+            width * height, min(width, height),
             float(item.get("rank_score") or 0), -int(item.get("provider_rank") or 0))
 
 

@@ -11,15 +11,18 @@ import http.cookies
 import json
 import mimetypes
 import os
+import re
 import shutil
 import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from collections import OrderedDict
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Mapping
@@ -33,7 +36,7 @@ STATIC_FILES = frozenset((
     "google-helper.js", "google-ranking.js", "google-helper.css",
     "gnosis-caduceus.svg",
     "images/getty/annunciation-1390.jpg",
-    "images/getty/annunciation-1660.jpg",
+    "images/getty/flight-into-egypt.jpg",
     "images/getty/madonna-and-child-with-musical-angels.jpg",
     "images/getty/adoration-of-the-magi.jpg",
 ))
@@ -59,6 +62,11 @@ from image_dimensions import resolve_result_dimensions  # noqa: E402
 from ranker import rank_result_groups, rank_results  # noqa: E402
 from semantic_embeddings import add_semantic_scores, image_similarity  # noqa: E402
 from pamela_ranker import add_pamela_scores  # noqa: E402
+from relevance_terms import (  # noqa: E402
+    STOPWORDS as EVIDENCE_STOPWORDS,
+    matched_query_tokens as evidence_matched_query_tokens,
+    tokens as evidence_tokens,
+)
 from visual_similarity import likely_same_image, rank_similar  # noqa: E402
 from beauty_tournament import TOURNAMENT  # noqa: E402
 
@@ -94,6 +102,9 @@ GOOGLE_IMAGE_SOURCES = frozenset((
 MAX_SESSIONS = 24
 SESSION_TTL_SECONDS = 30 * 60
 BATCH_SIZE = 10
+EXACT_CANDIDATE_MULTIPLIER = 20
+EXACT_MIN_CANDIDATES = 40
+EXACT_MAX_CANDIDATES = 400
 PREVIEW_BATCH_SIZES = (1, 2, 4)
 AGGREGATE_QUALITY_WINDOW = 50
 SOURCE_CONCURRENCY = max(
@@ -240,6 +251,18 @@ class SearchCancelled(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class SearchQuery:
+    raw: str
+    retrieval: str
+    exact_phrases: tuple[str, ...]
+    exact_requested: bool
+
+    @property
+    def exact_active(self) -> bool:
+        return bool(self.exact_phrases)
+
+
 def validate_query(value: str) -> str:
     query = " ".join((value or "").split())
     if not query:
@@ -247,6 +270,138 @@ def validate_query(value: str) -> str:
     if len(query) > 240:
         raise InputError("Search terms must be 240 characters or fewer.")
     return query
+
+
+def parse_bool(value: str | bool | None) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def parse_search_query(value: str, exact_requested: bool = False) -> SearchQuery:
+    """Separate retrieval terms from locally enforced exact phrases."""
+    raw = validate_query(value)
+    pieces: list[tuple[str, bool]] = []
+    buffer: list[str] = []
+    quote_end = ""
+    quote_pairs = {'"': '"', "“": "”", "„": "“"}
+
+    def flush(quoted: bool):
+        text = " ".join("".join(buffer).split())
+        buffer.clear()
+        if text:
+            pieces.append((text, quoted))
+
+    for character in raw:
+        if quote_end:
+            if character == quote_end:
+                flush(True)
+                quote_end = ""
+            else:
+                buffer.append(character)
+        elif character in quote_pairs:
+            flush(False)
+            quote_end = quote_pairs[character]
+        else:
+            buffer.append(character)
+    if quote_end:
+        raise InputError("Close the quotation mark in the search query.")
+    flush(False)
+
+    retrieval = " ".join(text for text, _quoted in pieces)
+    if not retrieval:
+        raise InputError("Enter one or more search terms.")
+    phrases = [text for text, quoted in pieces if quoted]
+    if exact_requested:
+        if phrases:
+            unquoted = " ".join(text for text, quoted in pieces if not quoted)
+            if unquoted:
+                phrases.append(unquoted)
+        else:
+            phrases = [retrieval]
+    return SearchQuery(raw, retrieval, tuple(phrases), bool(exact_requested))
+
+
+def normalized_phrase_tokens(value) -> tuple[str, ...]:
+    """Normalize case, punctuation, symbols, and whitespace to word tokens."""
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    characters = [
+        character if unicodedata.category(character)[:1] in {"L", "M", "N"}
+        else " "
+        for character in text
+    ]
+    return tuple("".join(characters).split())
+
+
+def _text_values(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, Mapping):
+        for child in value.values():
+            yield from _text_values(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            yield from _text_values(child)
+
+
+EXACT_RESULT_FIELDS = (
+    "title", "artist", "date", "medium", "description", "attribution",
+    "search_text",
+)
+
+
+def result_matches_exact_phrases(item: Mapping, phrases: tuple[str, ...]) -> bool:
+    """Require every phrase in at least one field without crossing fields."""
+    needles = [normalized_phrase_tokens(phrase) for phrase in phrases]
+    fields = [
+        normalized_phrase_tokens(value)
+        for field in EXACT_RESULT_FIELDS
+        for value in _text_values(item.get(field))
+    ]
+    return all(
+        needle and any(
+            field[index:index + len(needle)] == needle
+            for field in fields
+            for index in range(len(field) - len(needle) + 1)
+        )
+        for needle in needles
+    )
+
+
+def _result_candidate_key(item: Mapping) -> str:
+    return "|".join(str(item.get(field) or "") for field in (
+        "source_id", "page_url", "image_url",
+    ))
+
+
+def fetch_exact_candidates(
+    source_name: str,
+    adapter: Callable,
+    query: str,
+    candidate_limit: int,
+    exact_phrases: tuple[str, ...],
+) -> list[dict]:
+    """Use a provider's phrase endpoint where its broad endpoint is unsuitable."""
+    if source_name == "wellcome" and exact_phrases:
+        return list(adapter(
+            query, candidate_limit, exact_phrases=exact_phrases,
+        ))[:candidate_limit]
+    if source_name != "rijksmuseum" or not exact_phrases:
+        return list(adapter(query, candidate_limit))[:candidate_limit]
+
+    # Rijksmuseum's adapter searches and verifies one contiguous phrase. For a
+    # compound request, intersect its independently verified phrase result sets.
+    groups = [list(adapter(phrase, candidate_limit))[:candidate_limit]
+              for phrase in exact_phrases]
+    if not groups:
+        return []
+    common_keys = {
+        _result_candidate_key(item) for item in groups[0]
+    }
+    for group in groups[1:]:
+        common_keys.intersection_update(_result_candidate_key(item) for item in group)
+    return [item for item in groups[0]
+            if _result_candidate_key(item) in common_keys]
 
 
 def validate_limit(value: str | int | None) -> int:
@@ -278,7 +433,123 @@ def result_id(item: dict) -> str:
     return hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
 
 
-def normalize_result(item: dict, provider_rank: int = 0) -> dict:
+MATCH_EVIDENCE_FIELDS = (
+    ("title", "Title"),
+    ("description", "Description"),
+    ("artist", "Artist"),
+    ("date", "Date"),
+    ("medium", "Medium"),
+    ("attribution", "Attribution"),
+)
+MATCH_CONTEXT_LIMIT = 700
+
+
+def _bounded_evidence_excerpt(value: str, query: str) -> str:
+    """Return a compact original-text passage centered on the best match."""
+    text = " ".join(str(value or "").split())
+    if len(text) <= MATCH_CONTEXT_LIMIT:
+        return text
+    query_words = evidence_tokens(query)
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text)]
+    scored = []
+    for index, sentence in enumerate(sentences):
+        matched = evidence_matched_query_tokens(query_words, evidence_tokens(sentence))
+        if matched:
+            scored.append((len(matched), -len(sentence), -index, index))
+    if not scored:
+        return text[:MATCH_CONTEXT_LIMIT].rsplit(" ", 1)[0] + "…"
+    index = max(scored)[-1]
+    excerpt = sentences[index]
+    for neighbor in (index - 1, index + 1):
+        if 0 <= neighbor < len(sentences):
+            candidate = " ".join((sentences[neighbor], excerpt)) if neighbor < index else (
+                " ".join((excerpt, sentences[neighbor]))
+            )
+            if len(candidate) <= MATCH_CONTEXT_LIMIT:
+                excerpt = candidate
+    if len(excerpt) > MATCH_CONTEXT_LIMIT:
+        excerpt = excerpt[:MATCH_CONTEXT_LIMIT].rsplit(" ", 1)[0] + "…"
+    return excerpt
+
+
+def _search_text_evidence_values(value, label="Provider metadata"):
+    """Yield labeled scalar metadata without exposing the raw nested payload."""
+    if isinstance(value, str):
+        text = " ".join(value.split())
+        if text:
+            yield label, text
+    elif isinstance(value, Mapping):
+        for key, child in value.items():
+            child_label = str(key or label).replace("_", " ").strip().title()
+            yield from _search_text_evidence_values(child, child_label)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            yield from _search_text_evidence_values(child, label)
+
+
+def extract_match_evidence(item: Mapping, query: str) -> dict:
+    """Select bounded provider-authored text explaining a result's match."""
+    query_words = evidence_tokens(query)
+    if not query_words:
+        # Exact searches made only of common words still need literal evidence.
+        query_words = {
+            token for token in normalized_phrase_tokens(query)
+            if token not in EVIDENCE_STOPWORDS
+        }
+    candidates = []
+    seen = set()
+    values = [
+        (label, value)
+        for field, label in MATCH_EVIDENCE_FIELDS
+        for value in _text_values(item.get(field))
+    ]
+    values.extend(_search_text_evidence_values(item.get("search_text")))
+    normalized_query = " ".join(normalized_phrase_tokens(query))
+    for order, (label, value) in enumerate(values):
+        text = " ".join(str(value or "").split())
+        identity = (label.casefold(), text.casefold())
+        if not text or identity in seen:
+            continue
+        seen.add(identity)
+        field_words = evidence_tokens(text)
+        matched = evidence_matched_query_tokens(query_words, field_words)
+        normalized_text = " ".join(normalized_phrase_tokens(text))
+        phrase_match = bool(
+            normalized_query
+            and f" {normalized_query} " in f" {normalized_text} "
+        )
+        if not matched and not phrase_match:
+            continue
+        candidates.append((
+            int(phrase_match), len(matched), -order, -len(text), label, text,
+        ))
+    if not candidates:
+        return {
+            "match_context": "",
+            "matched_fields": [],
+            "matched_query_terms": [],
+            "missing_query_terms": sorted(query_words),
+            "match_evidence_status": "provider_returned_without_visible_evidence",
+        }
+    best = max(candidates)
+    matched_across_fields = set()
+    matched_labels = []
+    for _phrase, _count, _order, _length, label, text in candidates:
+        matched_across_fields.update(
+            evidence_matched_query_tokens(query_words, evidence_tokens(text))
+        )
+        if label not in matched_labels:
+            matched_labels.append(label)
+    return {
+        "match_context": _bounded_evidence_excerpt(best[-1], query),
+        "matched_fields": matched_labels,
+        "matched_query_terms": sorted(matched_across_fields),
+        "missing_query_terms": sorted(query_words - matched_across_fields),
+        "match_evidence_status": "supported",
+    }
+
+
+def normalize_result(item: dict, provider_rank: int = 0, query: str = "") -> dict:
     source_name = str(item.get("source") or "")
     image_delivery = str(item.get("image_delivery") or "")
     image_url = str(item.get("image_url") or "")
@@ -301,6 +572,10 @@ def normalize_result(item: dict, provider_rank: int = 0) -> dict:
         "source": source_name,
         "source_label": SOURCE_LABELS.get(source_name, source_name.title()),
         "source_id": str(item.get("source_id") or ""),
+        "work_id": str(item.get("work_id") or ""),
+        "is_primary_view": bool(item.get("is_primary_view")),
+        "matched_image_url": str(item.get("matched_image_url") or ""),
+        "fallback_image_url": str(item.get("fallback_image_url") or ""),
         "title": str(item.get("title") or "Untitled"),
         "artist": str(item.get("artist") or ""),
         "date": str(item.get("date") or ""),
@@ -335,6 +610,16 @@ def normalize_result(item: dict, provider_rank: int = 0) -> dict:
         f'An image titled “{normalized["title"]}” in the '
         f'{normalized["source_label"]} collection.'
     )
+    if query:
+        normalized.update(extract_match_evidence(item, query))
+    else:
+        normalized.update({
+            "match_context": "",
+            "matched_fields": [],
+            "matched_query_terms": [],
+            "missing_query_terms": [],
+            "match_evidence_status": "not_evaluated",
+        })
     return normalized
 
 
@@ -348,7 +633,9 @@ def search_one(
     try:
         adapter = (adapters or sources.ADAPTERS)[source_name]
         raw = adapter(query, limit)
-        results = [normalize_result(item, rank) for rank, item in enumerate(raw[:limit])]
+        results = [
+            normalize_result(item, rank, query) for rank, item in enumerate(raw[:limit])
+        ]
         return {
             "source": source_name,
             "label": SOURCE_LABELS[source_name],
@@ -382,6 +669,7 @@ def search_batch(
     adapters: Mapping[str, Callable] | None = None,
     cancelled: Callable[[], bool] | None = None,
     resolve_dimensions: bool = True,
+    exact_phrases: tuple[str, ...] = (),
 ) -> dict:
     """Fetch a growing provider window and return only its next slice."""
     def check_cancelled():
@@ -396,7 +684,10 @@ def search_batch(
     cache_owner = False
     cache_event = None
     if adapters is None and SEARCH_BATCH_CACHE_TTL_SECONDS:
-        cache_key = (source_name, query.casefold(), offset, batch_size)
+        cache_key = (
+            source_name, query.casefold(), offset, batch_size,
+            tuple(normalized_phrase_tokens(phrase) for phrase in exact_phrases),
+        )
         while True:
             check_cancelled()
             now = time.monotonic()
@@ -428,20 +719,39 @@ def search_batch(
             check_cancelled()
         adapter = (adapters or sources.ADAPTERS)[source_name]
         requested = offset + batch_size
-        raw = adapter(query, requested)
+        candidate_limit = requested
+        if exact_phrases:
+            candidate_limit = min(
+                EXACT_MAX_CANDIDATES,
+                max(EXACT_MIN_CANDIDATES, batch_size * EXACT_CANDIDATE_MULTIPLIER),
+            )
+        raw = fetch_exact_candidates(
+            source_name, adapter, query, candidate_limit, exact_phrases,
+        )
         check_cancelled()
-        window = list(raw[offset:requested])
+        verified = raw
+        if exact_phrases:
+            verified = [
+                item for item in raw
+                if result_matches_exact_phrases(item, exact_phrases)
+            ]
+        window = list(verified[offset:requested])
         if resolve_dimensions:
             window = resolve_result_dimensions(window)
         check_cancelled()
         group = {
             "source": source_name,
             "label": SOURCE_LABELS[source_name],
-            "results": [normalize_result(item, offset + rank)
+            "results": [normalize_result(item, offset + rank, query)
                         for rank, item in enumerate(window)],
             "count": len(window),
             "offset": offset,
-            "exhausted": len(window) < batch_size,
+            "exhausted": (
+                len(raw) < candidate_limit
+                or (candidate_limit >= EXACT_MAX_CANDIDATES
+                    and len(verified) <= requested)
+            ) if exact_phrases else len(window) < batch_size,
+            "exact_verified": bool(exact_phrases),
             "elapsed_ms": round((time.monotonic() - started) * 1000),
             "error": "",
         }
@@ -515,14 +825,19 @@ def stream_search_round(
             if state["rounds"] < len(PREVIEW_BATCH_SIZES)
             else BATCH_SIZE
         )
+        search_kwargs = {
+            "cancelled": lambda name=source_name: session.source_cancelled(name),
+            "resolve_dimensions": False,
+        }
+        if session.exact_phrases:
+            search_kwargs["exact_phrases"] = session.exact_phrases
         future = search_executor.submit(
             batch_search,
             source_name,
-            session.query,
+            session.retrieval_query,
             policy["fetched"],
             batch_size,
-            cancelled=lambda name=source_name: session.source_cancelled(name),
-            resolve_dimensions=False,
+            **search_kwargs,
         )
         work[future] = {
             "kind": "search",
@@ -630,9 +945,19 @@ def stream_search_round(
 
 
 class SearchSession:
-    def __init__(self, query: str, selected_sources: list[str]):
+    def __init__(
+        self,
+        query: str,
+        selected_sources: list[str],
+        retrieval_query: str | None = None,
+        exact_phrases: tuple[str, ...] = (),
+        exact_requested: bool = False,
+    ):
         self.id = uuid.uuid4().hex
         self.query = query
+        self.retrieval_query = retrieval_query or query
+        self.exact_phrases = tuple(exact_phrases)
+        self.exact_requested = bool(exact_requested)
         self.selected_sources = tuple(selected_sources)
         self.ranking_mode = "pamela"
         self.created_at = time.time()
@@ -796,6 +1121,9 @@ class SearchSession:
                     should_continue, reason = False, state["stop_reason"]
                 elif state["exhausted"]:
                     should_continue, reason = False, "source exhausted"
+                elif (self.exact_phrases
+                      and state["rounds"] <= len(PREVIEW_BATCH_SIZES)):
+                    should_continue, reason = True, "expanding exact-match candidates"
                 elif (state["rounds"] <= len(PREVIEW_BATCH_SIZES)
                       and state["last_batch_count"]
                       == PREVIEW_BATCH_SIZES[state["rounds"] - 1]):
@@ -822,6 +1150,9 @@ class SearchSession:
             return {
                 "session_id": self.id,
                 "query": self.query,
+                "exact_active": bool(self.exact_phrases),
+                "exact_requested": self.exact_requested,
+                "exact_phrases": list(self.exact_phrases),
                 "ranking_mode": self.ranking_mode,
                 "revision": self.revision,
                 "results": list(self.results.values()),
@@ -839,7 +1170,9 @@ SESSIONS_LOCK = threading.RLock()
 def create_session(
     query: str,
     selected_sources: list[str],
+    exact_requested: bool = False,
 ) -> SearchSession:
+    parsed_query = parse_search_query(query, exact_requested)
     now = time.time()
     with SESSIONS_LOCK:
         expired = [sid for sid, session in SESSIONS.items()
@@ -848,7 +1181,13 @@ def create_session(
             SESSIONS.pop(sid, None)
         while len(SESSIONS) >= MAX_SESSIONS:
             SESSIONS.popitem(last=False)
-        session = SearchSession(query, selected_sources)
+        session = SearchSession(
+            parsed_query.raw,
+            selected_sources,
+            retrieval_query=parsed_query.retrieval,
+            exact_phrases=parsed_query.exact_phrases,
+            exact_requested=parsed_query.exact_requested,
+        )
         SESSIONS[session.id] = session
         return session
 
@@ -1090,19 +1429,24 @@ def cached_high_res_image(
             event.set()
 
 
-def fetch_harvard_preview(item: dict, detail: bool = False) -> tuple[bytes, str]:
-    """Stream an official Harvard CDN image using short-lived access cookies."""
+def fetch_harvard_preview(
+    item: dict, detail: bool = False, attempts: int = 4,
+) -> tuple[bytes, str]:
+    """Fetch a Harvard CDN image, recovering from transient rate limits."""
     source_url = str(item.get("image_url" if detail else "thumb_url") or "")
     cdn_url = harvard_cdn_url(source_url)
     page_url = str(item.get("page_url") or "")
     last_error = None
     with HARVARD_PROXY_CONCURRENCY:
-        for attempt in range(2):
+        for attempt in range(attempts):
             try:
                 request = urllib.request.Request(cdn_url, headers={
                     "User-Agent": AIC_PROXY_UA,
                     "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8",
-                    "Cookie": harvard_cookie(page_url, force=attempt > 0),
+                    # Refresh once after the first image failure. Further
+                    # retries reuse that fresh cookie instead of adding more
+                    # load to Harvard's object page while it is rate-limiting.
+                    "Cookie": harvard_cookie(page_url, force=attempt == 1),
                     "Referer": page_url,
                 })
                 with urllib.request.urlopen(request, timeout=30) as response:
@@ -1113,6 +1457,8 @@ def fetch_harvard_preview(item: dict, detail: bool = False) -> tuple[bytes, str]
             except (OSError, urllib.error.URLError, urllib.error.HTTPError,
                     ImageProxyError) as exc:
                 last_error = exc
+                if attempt + 1 < attempts:
+                    time.sleep(min(0.5 * (2 ** attempt), 2.0))
     raise ImageProxyError("The Harvard preview is unavailable.") from last_error
 
 
@@ -1274,7 +1620,8 @@ class SearchHandler(BaseHTTPRequestHandler):
             elif url.path == "/api/search/start":
                 query = validate_query((params.get("q") or [""])[0])
                 selected = parse_sources((params.get("sources") or [""])[0])
-                session = create_session(query, selected)
+                exact_requested = parse_bool((params.get("exact") or [""])[0])
+                session = create_session(query, selected, exact_requested)
                 self.send_json(200, session.snapshot())
             elif url.path == "/api/search/source":
                 session = get_session((params.get("session") or [""])[0])
@@ -1290,8 +1637,9 @@ class SearchHandler(BaseHTTPRequestHandler):
                 if offset < 0:
                     raise InputError("Invalid source offset.")
                 group = search_batch(
-                    source_name, session.query, offset,
+                    source_name, session.retrieval_query, offset,
                     cancelled=lambda: session.source_cancelled(source_name),
+                    exact_phrases=session.exact_phrases,
                 )
                 self.send_json(200, session.merge_batch(group, coalesce_ranking=True))
             elif url.path == "/api/search/stream":

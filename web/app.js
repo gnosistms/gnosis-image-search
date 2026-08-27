@@ -4,6 +4,8 @@ const searchButton = form.querySelector('.search-button');
 const heroForm = document.querySelector('#hero-search-form');
 const heroQueryInput = document.querySelector('#hero-query');
 const heroSearchButton = heroForm.querySelector('button');
+const exactPhrases = document.querySelector('#exact-phrases');
+const heroExactPhrases = document.querySelector('#hero-exact-phrases');
 const gallery = document.querySelector('#gallery');
 const emptyState = document.querySelector('#empty-state');
 const statusLine = document.querySelector('#search-status');
@@ -29,7 +31,11 @@ const detailArtistRow = document.querySelector('#detail-artist-row');
 const detailArtist = document.querySelector('#detail-artist');
 const detailDateRow = document.querySelector('#detail-date-row');
 const detailDate = document.querySelector('#detail-date');
+const detailDescriptionSection = document.querySelector('#detail-description-section');
 const detailDescription = document.querySelector('#detail-description');
+const detailMatchSection = document.querySelector('#detail-match-section');
+const detailMatchFields = document.querySelector('#detail-match-fields');
+const detailMatchContext = document.querySelector('#detail-match-context');
 const detailLicense = document.querySelector('#detail-license');
 const detailSize = document.querySelector('#detail-size');
 const similarGrid = document.querySelector('#similar-grid');
@@ -59,6 +65,14 @@ const panelItems = new Map();
 const searchControllers = new Set();
 const shownSourceAlerts = new Set();
 let copyFeedbackTimer;
+let exactPhrasesRequested = false;
+
+function setExactPhrases(requested) {
+  exactPhrasesRequested = requested;
+  for (const control of [exactPhrases, heroExactPhrases]) {
+    control.setAttribute('aria-pressed', String(requested));
+  }
+}
 
 function clearCopyFeedback() {
   clearTimeout(copyFeedbackTimer);
@@ -422,12 +436,18 @@ function applySnapshot(snapshot, sequence) {
   currentRevision = snapshot.revision;
   showSourceAlerts(snapshot.source_alerts);
   renderGallery(snapshot.results);
+  if (selectedItemId) {
+    const selected = findItem(selectedItemId);
+    if (selected) renderDetailMetadata(selected);
+  }
   const unavailable = Object.keys(snapshot.source_errors);
   const errors = unavailable.length;
   const policies = Object.values(snapshot.source_policy || {});
   const active = policies.filter(policy => policy.continue).length;
   const searched = policies.length - active;
-  const resultText = `${snapshot.results.length} ranked images`;
+  const resultText = snapshot.exact_active
+    ? `${snapshot.results.length} exact matches`
+    : `${snapshot.results.length} ranked images`;
   const progressText = policies.length
     ? `${searched} of ${policies.length} collections searched`
     : '';
@@ -532,7 +552,7 @@ async function runSearch(query) {
 
   try {
     const start = await getJson(
-      `/api/search/start?q=${encodeURIComponent(query)}&sources=${encodeURIComponent(selected.join(','))}`
+      `/api/search/start?q=${encodeURIComponent(query)}&sources=${encodeURIComponent(selected.join(','))}&exact=${exactPhrasesRequested ? '1' : '0'}`
     );
     if (sequence !== currentSearchSequence) return;
     currentSession = start.session_id;
@@ -563,6 +583,26 @@ function findItem(id) {
   return currentResults.find(item => item.id === id) || panelItems.get(id);
 }
 
+function renderDetailMetadata(item) {
+  detailTitle.textContent = item.title;
+  detailSource.textContent = item.source_label;
+  detailArtist.textContent = item.artist || '';
+  detailArtistRow.hidden = !item.artist;
+  detailDate.textContent = item.date || '';
+  detailDateRow.hidden = !item.date;
+  detailDescription.textContent = item.description || '';
+  detailDescriptionSection.hidden = !item.description;
+
+  const hasEvidence = Boolean(item.match_context);
+  detailMatchFields.textContent = hasEvidence && item.matched_fields?.length
+    ? item.matched_fields.join(' · ')
+    : '';
+  detailMatchContext.textContent = hasEvidence
+    ? item.match_context
+    : 'This collection returned the result without exposing matching text in the metadata available to the app.';
+  detailMatchSection.hidden = item.match_evidence_status === 'not_evaluated';
+}
+
 async function openDetails(id, previewImage) {
   const item = findItem(id);
   if (!item) return;
@@ -572,13 +612,7 @@ async function openDetails(id, previewImage) {
     tile.classList.toggle('selected', tile.dataset.id === id));
   const galleryPreview = galleryTiles.get(id)?.querySelector('img');
   showDetailImage(item, previewImage || galleryPreview);
-  detailTitle.textContent = item.title;
-  detailSource.textContent = item.source_label;
-  detailArtist.textContent = item.artist || '';
-  detailArtistRow.hidden = !item.artist;
-  detailDate.textContent = item.date || '';
-  detailDateRow.hidden = !item.date;
-  detailDescription.textContent = item.description || 'No additional description was supplied by this collection.';
+  renderDetailMetadata(item);
   detailLicense.textContent = item.license;
   detailSize.textContent = '';
   detailImageLink.href = item.preview_click_url || item.page_url || item.image_url;
@@ -745,6 +779,8 @@ function closeDetails() {
 
 setupSearchControl(form, queryInput, searchButton);
 setupSearchControl(heroForm, heroQueryInput, heroSearchButton);
+exactPhrases.addEventListener('click', () => setExactPhrases(!exactPhrasesRequested));
+heroExactPhrases.addEventListener('click', () => setExactPhrases(!exactPhrasesRequested));
 
 form.addEventListener('submit', event => {
   event.preventDefault();
