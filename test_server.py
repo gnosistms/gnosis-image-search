@@ -78,6 +78,15 @@ def result(source, title="Result", source_id="1", **extra):
 
 
 class ExactPhraseTests(unittest.TestCase):
+    def test_match_highlighting_behavior_is_declared_by_the_adapter(self):
+        wellcome = server.normalize_result(result(
+            "wellcome", "A queue", match_highlight_mode="english_stem",
+        ))
+        met = server.normalize_result(result("met", "A queue"))
+
+        self.assertEqual(wellcome["match_highlight_mode"], "english_stem")
+        self.assertEqual(met["match_highlight_mode"], "whole_word")
+
     def test_normalization_exposes_bounded_query_bearing_search_text(self):
         item = result(
             "wellcome", "A vessel",
@@ -159,6 +168,17 @@ class ExactPhraseTests(unittest.TestCase):
             result("met", "Guardian", description="of the threshold"),
             ("guardian of the threshold",),
         ))
+
+    def test_normalization_exposes_provider_page_terms_for_local_filtering(self):
+        normalized = server.normalize_result(result(
+            "met", "The Guardian",
+            description="A figure waits at the threshold.",
+            search_text={"subject": ["Wisdom at the café"]},
+        ))
+        self.assertTrue(
+            {"guardian", "threshold", "wisdom", "cafe"}
+            <= set(normalized["page_text_terms"])
+        )
         self.assertFalse(server.result_matches_exact_phrases(
             result("met", "Guardian great of the threshold"),
             ("guardian of the threshold",),
@@ -495,6 +515,45 @@ class SessionTests(unittest.TestCase):
                 "offset": 0, "count": 1, "exhausted": True,
             }, stream_token=stream_token)
         self.assertEqual(session.all_results, {})
+
+    def test_hidden_provider_can_finish_and_cache_its_current_batch(self):
+        session = server.create_session("light", ["met"])
+        stream_token, _sources = session.begin_stream()
+        late = server.normalize_result(result("met", "Late", "late-1"))
+
+        hidden = session.update_sources([])
+        self.assertEqual(hidden["results"], [])
+        self.assertFalse(session.batch_cancelled("met"))
+
+        after_batch = session.merge_batch({
+            "source": "met", "results": [late], "error": "",
+            "offset": 0, "count": 1, "exhausted": True,
+        }, stream_token=stream_token, retain_superseded_batch=True)
+        self.assertEqual(after_batch["results"], [])
+        self.assertEqual(session.all_results[late["id"]]["id"], late["id"])
+
+        restored = session.update_sources(["met"])
+        self.assertEqual([item["id"] for item in restored["results"]], [late["id"]])
+
+    def test_empty_provider_result_stays_terminal_after_hide_and_restore(self):
+        session = server.create_session("\"missing phrase\"", ["met"], True)
+        first = session.merge_batch({
+            "source": "met", "results": [], "error": "",
+            "offset": 0, "count": 0,
+            # Exact searches can have more raw candidates despite returning no
+            # verified images, so exhaustion alone is not enough to cache this.
+            "exhausted": False,
+        })
+        self.assertFalse(first["source_policy"]["met"]["continue"])
+        self.assertEqual(
+            first["source_policy"]["met"]["reason"], "no results (cached)",
+        )
+
+        session.update_sources([])
+        restored = session.update_sources(["met"])
+        self.assertFalse(restored["source_policy"]["met"]["continue"])
+        self.assertEqual(restored["source_policy"]["met"]["fetched"], 0)
+        self.assertEqual(restored["results"], [])
 
     def test_empty_provider_update_is_not_treated_as_select_all(self):
         self.assertEqual(server.parse_sources("", allow_empty=True), [])
@@ -1339,6 +1398,7 @@ class BatchTests(unittest.TestCase):
             "A physician demonstrates the instrument to a patient.",
         )
         self.assertEqual(item["license"], "Public Domain Mark")
+        self.assertEqual(item["match_highlight_mode"], "english_stem")
 
     def test_smk_runes_filter_keeps_rune_forms_and_rejects_ocr_run(self):
         def record(source_id, title):
@@ -2418,6 +2478,58 @@ class BatchTests(unittest.TestCase):
             results[0]["page_url"],
             "https://www.nga.gov/artworks/7-the-liberation-of-saint-peter",
         )
+
+    def test_nga_focused_multiword_search_rejects_cross_field_prefix_noise(self):
+        objects = (
+            "objectid,title,attribution,displaydate,medium,classification\n"
+            "1,Dr. Robert Fludd Physician and Rosicrucian,Unknown,1600,engraving,Print\n"
+            "2,Christ on the Cross,Unknown,1500,hand-colored in rose,Print\n"
+            "3,Miner's Chair - Hand Made,Rose Campbell-Gerke,1940,watercolor,Drawing\n"
+            "4,Rosette,Unknown,1940,watercolor,Drawing\n"
+        )
+        images = (
+            "uuid,iiifurl,iiifthumburl,viewtype,sequence,width,height,openaccess,"
+            "depictstmsobjectid,assistivetext\n"
+            "a,https://api.nga.gov/iiif/a,x,primary,0,1000,1000,1,1,Portrait of a Rosicrucian physician\n"
+            "b,https://api.nga.gov/iiif/b,x,primary,0,1000,1000,1,2,A figure on a wooden cross\n"
+            "c,https://api.nga.gov/iiif/c,x,primary,0,1000,1000,1,3,A chair with crossed legs\n"
+            "d,https://api.nga.gov/iiif/d,x,primary,0,1000,1000,1,4,A cross-shaped ornament\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory) / "nga.zip"
+            database_path = Path(directory) / "nga.db"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("opendata-main/data/objects.csv", objects)
+                archive.writestr("opendata-main/data/published_images.csv", images)
+            catalog = additional_sources.NGACatalog(database_path)
+            catalog.build_from_archive(archive_path)
+            results = catalog.search("rose cross", 10)
+        self.assertEqual([item["source_id"] for item in results], ["1"])
+
+    def test_nga_multiword_terms_must_be_close_in_one_strong_field(self):
+        objects = (
+            "objectid,title,attribution,displaydate,medium,classification\n"
+            "1,Blue Study,Example Artist,1900,ink,Drawing\n"
+            "2,Another Study,Blue Artist,1900,ink,Drawing\n"
+            "3,Third Study,Example Artist,1900,blue pigment,Drawing\n"
+        )
+        images = (
+            "uuid,iiifurl,iiifthumburl,viewtype,sequence,width,height,openaccess,"
+            "depictstmsobjectid,assistivetext\n"
+            "a,https://api.nga.gov/iiif/a,x,primary,0,1000,1000,1,1,An angel appears in blue robes\n"
+            "b,https://api.nga.gov/iiif/b,x,primary,0,1000,1000,1,2,An angel appears\n"
+            "c,https://api.nga.gov/iiif/c,x,primary,0,1000,1000,1,3,An angel appears\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory) / "nga.zip"
+            database_path = Path(directory) / "nga.db"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("opendata-main/data/objects.csv", objects)
+                archive.writestr("opendata-main/data/published_images.csv", images)
+            catalog = additional_sources.NGACatalog(database_path)
+            catalog.build_from_archive(archive_path)
+            results = catalog.search("blue angel", 10)
+        self.assertEqual([item["source_id"] for item in results], ["1"])
 
     def test_nga_artwork_url_includes_title_slug_required_by_current_site(self):
         self.assertEqual(

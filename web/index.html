@@ -16,12 +16,18 @@
       <input id="query" type="search" maxlength="240" placeholder="Search images" autocomplete="off">
       <button class="search-button" type="submit" aria-label="Search">⌕</button>
     </form>
+    <button id="all-terms" class="search-policy-toggle all-terms-toggle" type="button"
+            aria-pressed="false"
+            data-tooltip="Only show results where all the search terms appear somewhere on the page. This is weaker than &quot;Exact matches&quot;. For example, it matches both &quot;rose cross&quot; and &quot;cross. Rose&quot;. Toggling this does not restart the search.">
+      All terms
+    </button>
     <button id="exact-phrases" class="exact-phrases-toggle" type="button"
             aria-pressed="false"
-            title="Require each phrase to appear with its words together and in order. Capitalization, punctuation, and whitespace are ignored.">
-      Exact phrases
+            data-tooltip="This requests the search providers to return only results that exactly match the entire search term. For example, a search for &quot;rose cross&quot; will not match &quot;cross rose&quot; or &quot;cross&quot; alone. Toggling this setting restarts the search.">
+      Exact matches
     </button>
-    <button id="toggle-sources" class="filter-button" type="button" aria-expanded="false">Collections · 0</button>
+    <button id="toggle-sources" class="filter-button" type="button" aria-expanded="false"
+            data-tooltip="Select which image websites to search. This can be adjusted in real time without restarting the search.">Collections · 0</button>
   </header>
 
   <section id="source-panel" class="source-panel" hidden>
@@ -58,12 +64,18 @@
           <button type="submit" aria-label="Search">⌕</button>
         </form>
         <div class="hero-search-options">
+          <button id="hero-all-terms" class="search-policy-toggle all-terms-toggle hero-search-policy" type="button"
+                  aria-pressed="false"
+                  data-tooltip="Only show results where all the search terms appear somewhere on the page. This is weaker than &quot;Exact matches&quot;. For example, it matches both &quot;rose cross&quot; and &quot;cross. Rose&quot;. Toggling this does not restart the search.">
+            All terms
+          </button>
           <button id="hero-exact-phrases" class="exact-phrases-toggle hero-exact-phrases" type="button"
                   aria-pressed="false"
-                  title="Require each phrase to appear with its words together and in order. Capitalization, punctuation, and whitespace are ignored.">
-            Exact phrases
+                  data-tooltip="This requests the search providers to return only results that exactly match the entire search term. For example, a search for &quot;rose cross&quot; will not match &quot;cross rose&quot; or &quot;cross&quot; alone. Toggling this setting restarts the search.">
+            Exact matches
           </button>
-          <button id="hero-toggle-sources" class="hero-filter-button" type="button" aria-expanded="false">
+          <button id="hero-toggle-sources" class="hero-filter-button" type="button" aria-expanded="false"
+                  data-tooltip="Select which image websites to search. This can be adjusted in real time without restarting the search.">
             Choose collections <span id="hero-source-count">· 0 selected</span>
           </button>
         </div>
@@ -189,6 +201,8 @@
   </template>
 
   <script src="/full-size-image-url.js" defer></script>
+  <script src="/search-term-highlight.js" defer></script>
+  <script src="/all-terms-filter.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

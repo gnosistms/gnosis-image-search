@@ -4,6 +4,8 @@ const searchButton = form.querySelector('.search-button');
 const heroForm = document.querySelector('#hero-search-form');
 const heroQueryInput = document.querySelector('#hero-query');
 const heroSearchButton = heroForm.querySelector('button');
+const allTerms = document.querySelector('#all-terms');
+const heroAllTerms = document.querySelector('#hero-all-terms');
 const exactPhrases = document.querySelector('#exact-phrases');
 const heroExactPhrases = document.querySelector('#hero-exact-phrases');
 const gallery = document.querySelector('#gallery');
@@ -55,6 +57,7 @@ if (launchParameters.has('desktop')) {
 
 let sourceConfig = [];
 let currentResults = [];
+let latestSnapshotResults = [];
 let currentSession = '';
 let currentRevision = -1;
 let currentSearchSequence = 0;
@@ -69,13 +72,51 @@ const panelItems = new Map();
 const searchControllers = new Set();
 const shownSourceAlerts = new Set();
 let copyFeedbackTimer;
+let allTermsRequested = false;
 let exactPhrasesRequested = false;
+
+function setAllTerms(requested) {
+  allTermsRequested = requested;
+  for (const control of [allTerms, heroAllTerms]) {
+    control.setAttribute('aria-pressed', String(requested));
+  }
+}
+
+function allTermsChanged() {
+  setAllTerms(!allTermsRequested);
+  if (!activeSearchQuery) return;
+  renderGallery(resultsForSelectedSources(latestSnapshotResults));
+  const resultStatus = statusLine.querySelector('.status-results');
+  if (resultStatus) {
+    resultStatus.textContent = allTermsRequested
+      ? `${currentResults.length} all-term matches`
+      : activeSearchExact
+        ? `${currentResults.length} exact matches`
+        : `${currentResults.length} ranked images`;
+    statusLine.setAttribute(
+      'aria-label',
+      [...statusLine.children].map(element => element.textContent).join(' · '),
+    );
+  }
+  if (!currentResults.length && !statusLine.classList.contains('is-searching')) {
+    gallery.innerHTML = '<p class="notice">No matching images found.</p>';
+  }
+}
 
 function setExactPhrases(requested) {
   exactPhrasesRequested = requested;
   for (const control of [exactPhrases, heroExactPhrases]) {
     control.setAttribute('aria-pressed', String(requested));
   }
+}
+
+function exactPhrasesChanged() {
+  setExactPhrases(!exactPhrasesRequested);
+  // Exactness changes retrieval and verification, so replace the active
+  // search session instead of trying to reinterpret its cached candidates.
+  // activeSearchQuery is set before the start request completes, which also
+  // makes toggling during the first in-flight request restart it correctly.
+  if (activeSearchQuery) runSearch(activeSearchQuery);
 }
 
 function clearCopyFeedback() {
@@ -100,6 +141,15 @@ function showCopyFeedback({ message, tooltip, className, duration = 1500 }) {
 
 function selectedSources() {
   return [...sourceOptions.querySelectorAll('input:checked')].map(input => input.value);
+}
+
+function resultsForSelectedSources(items, selected = selectedSources()) {
+  const visibleSources = new Set(selected);
+  return items.filter(item => (
+    visibleSources.has(item.source)
+    && (!allTermsRequested
+      || GnosisAllTermsFilter.matches(item, activeSearchQuery))
+  ));
 }
 
 function updateSourceCount() {
@@ -229,6 +279,12 @@ async function loadSources() {
 function imageRatio(item) {
   const ratio = item.width && item.height ? item.width / item.height : 1.38;
   return Math.max(.62, Math.min(ratio, 2.8));
+}
+
+function setTileRatio(tile, ratio) {
+  const boundedRatio = Math.max(.62, Math.min(ratio || 1.38, 2.8));
+  tile.style.setProperty('--ratio', boundedRatio);
+  tile.classList.toggle('portrait-image', boundedRatio < 1);
 }
 
 function imageFileType(item) {
@@ -378,7 +434,7 @@ function showDetailImage(item, previewImage) {
 
 function updateTile(tile, item) {
   tile.dataset.id = item.id;
-  tile.style.setProperty('--ratio', imageRatio(item));
+  setTileRatio(tile, Number(tile.dataset.intrinsicRatio) || imageRatio(item));
   tile.classList.toggle('selected', item.id === selectedItemId);
   tile.querySelector('strong').textContent = item.title;
   tile.querySelector('small').textContent = typeof item.pamela_score === 'number'
@@ -391,6 +447,16 @@ function createTile(item) {
   const tile = tileTemplate.content.firstElementChild.cloneNode(true);
   const image = tile.querySelector('img');
   image.alt = item.title;
+  // Provider dimensions are occasionally missing or describe a derivative
+  // with a different crop. Once the displayed image loads, its intrinsic
+  // dimensions are authoritative for the tile's orientation.
+  image.addEventListener('load', () => {
+    if (image.naturalWidth && image.naturalHeight) {
+      const intrinsicRatio = image.naturalWidth / image.naturalHeight;
+      tile.dataset.intrinsicRatio = intrinsicRatio;
+      setTileRatio(tile, intrinsicRatio);
+    }
+  });
   applyImageSources(image, item);
   tile.addEventListener('click', () => openDetails(tile.dataset.id, image));
   updateTile(tile, item);
@@ -443,8 +509,9 @@ function renderGallery(items) {
 function applySnapshot(snapshot, sequence) {
   if (sequence !== currentSearchSequence || snapshot.revision < currentRevision) return;
   currentRevision = snapshot.revision;
+  latestSnapshotResults = snapshot.results;
   showSourceAlerts(snapshot.source_alerts);
-  renderGallery(snapshot.results);
+  renderGallery(resultsForSelectedSources(latestSnapshotResults));
   if (selectedItemId) {
     const selected = currentResults.find(item => item.id === selectedItemId);
     if (selected) renderDetailMetadata(selected);
@@ -456,9 +523,16 @@ function applySnapshot(snapshot, sequence) {
     .filter(policy => policy.selected !== false);
   const active = policies.filter(policy => policy.continue).length;
   const searched = policies.length - active;
-  const resultText = snapshot.exact_active
-    ? `${snapshot.results.length} exact matches`
-    : `${snapshot.results.length} ranked images`;
+  // An empty gallery only needs its spinner while at least one selected
+  // provider still has work to do. In particular, a cached zero-result
+  // provider is complete even though there are no tiles to make
+  // renderGallery() clear the spinner for us.
+  setGallerySearching(Boolean(active && !currentResults.length));
+  const resultText = allTermsRequested
+    ? `${currentResults.length} all-term matches`
+    : snapshot.exact_active
+      ? `${currentResults.length} exact matches`
+      : `${currentResults.length} ranked images`;
   const progressText = policies.length
     ? `${searched} of ${policies.length} collections searched`
     : '';
@@ -556,6 +630,26 @@ async function updateSessionSources(sequence, sessionId, selected) {
 
 function providerSelectionChanged() {
   updateSourceCount();
+  const selected = selectedSources();
+  // Provider updates can take a moment while a current batch winds down. Keep
+  // the last server snapshot cached, but make checkbox state authoritative for
+  // what is visible so deselected results disappear on the same UI event.
+  renderGallery(resultsForSelectedSources(latestSnapshotResults, selected));
+  if (selectedItemId && !currentResults.some(item => item.id === selectedItemId)) {
+    closeDetails();
+  }
+  if (!selected.length) {
+    setGallerySearching(false);
+    gallery.innerHTML = '<p class="notice">No collections selected.</p>';
+  }
+  // If exactness changed while no providers were selected, there was nothing
+  // to restart at that moment. Start the replacement session as soon as a
+  // provider becomes available again.
+  if (selected.length && activeSearchQuery
+      && exactPhrasesRequested !== activeSearchExact) {
+    runSearch(activeSearchQuery);
+    return;
+  }
   if (!currentSession) return;
   const changeRevision = ++sourceSelectionRevision;
   sourceUpdateQueue = sourceUpdateQueue.catch(() => {}).then(async () => {
@@ -571,9 +665,13 @@ function providerSelectionChanged() {
       if (!snapshot || changeRevision !== sourceSelectionRevision) return;
       if (selected.some(source => snapshot.source_policy?.[source]?.continue)) {
         await continueSessionSearch(sequence, sessionId);
-      } else if (!selected.length && sequence === currentSearchSequence) {
+      } else if (sequence === currentSearchSequence) {
         setGallerySearching(false);
-        gallery.innerHTML = '<p class="notice">No collections selected.</p>';
+        if (!selected.length) {
+          gallery.innerHTML = '<p class="notice">No collections selected.</p>';
+        } else if (!currentResults.length) {
+          gallery.innerHTML = '<p class="notice">No matching images found.</p>';
+        }
       }
     } catch (error) {
       if (sequence === currentSearchSequence) setPlainStatus(error.message);
@@ -606,6 +704,7 @@ async function runSearch(query) {
   const sequence = ++currentSearchSequence;
   cancelPreviousSearch();
   currentResults = [];
+  latestSnapshotResults = [];
   currentSession = '';
   activeSearchQuery = query;
   activeSearchExact = exactPhrasesRequested;
@@ -648,6 +747,21 @@ function findItem(id) {
   return currentResults.find(item => item.id === id) || panelItems.get(id);
 }
 
+function renderHighlightedMatchContext(text, query, mode) {
+  const fragment = document.createDocumentFragment();
+  for (const segment of GnosisSearchTermHighlight.segments(text, query, mode)) {
+    if (!segment.highlighted) {
+      fragment.append(document.createTextNode(segment.text));
+      continue;
+    }
+    const mark = document.createElement('mark');
+    mark.className = 'search-term-highlight';
+    mark.textContent = segment.text;
+    fragment.append(mark);
+  }
+  detailMatchContext.replaceChildren(fragment);
+}
+
 function renderDetailMetadata(item) {
   detailTitle.textContent = item.title;
   detailSource.textContent = item.source_label;
@@ -662,9 +776,13 @@ function renderDetailMetadata(item) {
   detailMatchFields.textContent = hasEvidence && item.matched_fields?.length
     ? item.matched_fields.join(' · ')
     : '';
-  detailMatchContext.textContent = hasEvidence
-    ? item.match_context
-    : 'This collection returned the result without exposing matching text in the metadata available to the app.';
+  if (hasEvidence) {
+    renderHighlightedMatchContext(
+      item.match_context, activeSearchQuery, item.match_highlight_mode,
+    );
+  } else {
+    detailMatchContext.textContent = 'This collection returned the result without exposing matching text in the metadata available to the app.';
+  }
   detailMatchSection.hidden = item.match_evidence_status === 'not_evaluated';
 }
 
@@ -844,8 +962,10 @@ function closeDetails() {
 
 setupSearchControl(form, queryInput, searchButton);
 setupSearchControl(heroForm, heroQueryInput, heroSearchButton);
-exactPhrases.addEventListener('click', () => setExactPhrases(!exactPhrasesRequested));
-heroExactPhrases.addEventListener('click', () => setExactPhrases(!exactPhrasesRequested));
+allTerms.addEventListener('click', allTermsChanged);
+heroAllTerms.addEventListener('click', allTermsChanged);
+exactPhrases.addEventListener('click', exactPhrasesChanged);
+heroExactPhrases.addEventListener('click', exactPhrasesChanged);
 
 form.addEventListener('submit', event => {
   event.preventDefault();

@@ -32,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 WEB_DIR = HERE / "web"
 STATIC_FILES = frozenset((
     "app.js", "styles.css", "beauty.js", "beauty.css",
-    "full-size-image-url.js",
+    "full-size-image-url.js", "search-term-highlight.js", "all-terms-filter.js",
     "google-helper.js", "google-ranking.js", "google-helper.css",
     "gnosis-caduceus.svg",
     "images/getty/annunciation-1390.jpg",
@@ -64,6 +64,7 @@ from semantic_embeddings import add_semantic_scores, image_similarity  # noqa: E
 from pamela_ranker import add_pamela_scores  # noqa: E402
 from relevance_terms import (  # noqa: E402
     STOPWORDS as EVIDENCE_STOPWORDS,
+    fold as fold_evidence_text,
     matched_query_tokens as evidence_matched_query_tokens,
     tokens as evidence_tokens,
 )
@@ -278,7 +279,10 @@ def parse_bool(value: str | bool | None) -> bool:
     return str(value or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
-def parse_search_query(value: str, exact_requested: bool = False) -> SearchQuery:
+def parse_search_query(
+    value: str,
+    exact_requested: bool = False,
+) -> SearchQuery:
     """Separate retrieval terms from locally enforced exact phrases."""
     raw = validate_query(value)
     pieces: list[tuple[str, bool]] = []
@@ -366,6 +370,16 @@ def result_matches_exact_phrases(item: Mapping, phrases: tuple[str, ...]) -> boo
         )
         for needle in needles
     )
+
+
+def result_page_text_terms(item: Mapping) -> list[str]:
+    """Return compact, normalized tokens from provider-authored page metadata."""
+    return sorted({
+        token
+        for field in EXACT_RESULT_FIELDS
+        for value in _text_values(item.get(field))
+        for token in fold_evidence_text(value).split()
+    })
 
 
 def _result_candidate_key(item: Mapping) -> str:
@@ -599,6 +613,15 @@ def normalize_result(item: dict, provider_rank: int = 0, query: str = "") -> dic
         "width": int(item.get("width") or 0),
         "height": int(item.get("height") or 0),
         "provider_rank": int(provider_rank),
+        # Matching expansions belong to the provider adapter that performed
+        # retrieval.  Unknown providers remain conservative by default.
+        "match_highlight_mode": (
+            item.get("match_highlight_mode")
+            if item.get("match_highlight_mode") in {
+                "whole_word", "english_stem", "prefix",
+            }
+            else "whole_word"
+        ),
     }
     normalized["id"] = result_id(normalized)
     supplied_description = str(item.get("description") or "").strip() or " · ".join(
@@ -610,6 +633,7 @@ def normalize_result(item: dict, provider_rank: int = 0, query: str = "") -> dic
         f'An image titled “{normalized["title"]}” in the '
         f'{normalized["source_label"]} collection.'
     )
+    normalized["page_text_terms"] = result_page_text_terms(item)
     if query:
         normalized.update(extract_match_evidence(item, query))
     else:
@@ -831,9 +855,11 @@ def stream_search_round(
             else BATCH_SIZE
         )
         search_kwargs = {
-            "cancelled": lambda name=source_name: session.source_cancelled(
-                name, stream_token,
-            ),
+            # Once a provider request is under way, let that one batch finish
+            # even if the user hides the provider. Its results remain cached
+            # in the session but the selected-source ranking keeps them out of
+            # the visible snapshot.
+            "cancelled": lambda name=source_name: session.batch_cancelled(name),
             "resolve_dimensions": False,
         }
         if session.exact_phrases:
@@ -927,6 +953,7 @@ def stream_search_round(
                     snapshot = session.merge_batch(
                         group, coalesce_ranking=False, score_results=False,
                         stream_token=stream_token,
+                        retain_superseded_batch=True,
                     )
                 except SearchCancelled:
                     continue
@@ -943,6 +970,7 @@ def stream_search_round(
                         snapshot = session.merge_batch(
                             group, coalesce_ranking=False, score_results=False,
                             stream_token=stream_token,
+                            retain_superseded_batch=True,
                         )
                     except SearchCancelled:
                         continue
@@ -985,7 +1013,8 @@ class SearchSession:
         self.source_alerts: dict[str, dict] = {}
         self.source_states = {
             name: {"fetched": 0, "last_ids": [], "exhausted": False,
-                   "stop_reason": "", "rounds": 0, "last_batch_count": 0}
+                   "stop_reason": "", "rounds": 0, "last_batch_count": 0,
+                   "empty_result_cached": False}
             for name in selected_sources
         }
         self.revision = 0
@@ -1025,6 +1054,14 @@ class SearchSession:
                 or (stream_token is not None and stream_token != self.stream_generation)
             )
 
+    def batch_cancelled(self, source_name: str) -> bool:
+        """Whether an already-started provider batch must stop immediately."""
+        with self.lock:
+            return (
+                self.cancelled
+                or self.source_cancel_events[source_name].is_set()
+            )
+
     def update_sources(self, selected_sources: list[str]) -> dict:
         """Change the visible providers without discarding any fetched results."""
         selected = tuple(name for name in SOURCE_LABELS if name in selected_sources)
@@ -1037,12 +1074,11 @@ class SearchSession:
                     self.source_states[name] = {
                         "fetched": 0, "last_ids": [], "exhausted": False,
                         "stop_reason": "", "rounds": 0, "last_batch_count": 0,
+                        "empty_result_cached": False,
                     }
                     self.source_cancel_events[name] = threading.Event()
                 elif name not in previous:
                     self.source_cancel_events[name].clear()
-            for name in previous - active:
-                self.source_cancel_events[name].set()
             self.selected_sources = selected
             self.rank_dirty = True
             self.dirty_batches += 1
@@ -1083,9 +1119,14 @@ class SearchSession:
         coalesce_ranking: bool = False,
         score_results: bool = True,
         stream_token: int | None = None,
+        retain_superseded_batch: bool = False,
     ) -> dict:
         source_name = group["source"]
-        if self.source_cancelled(source_name, stream_token):
+        cancelled = (
+            self.batch_cancelled(source_name) if retain_superseded_batch
+            else self.source_cancelled(source_name, stream_token)
+        )
+        if cancelled:
             raise SearchCancelled("Search was superseded by a newer request.")
         with self.lock:
             state = self.source_states[source_name]
@@ -1094,7 +1135,11 @@ class SearchSession:
         incoming = list(group["results"])
         if score_results:
             incoming = score_search_results(self.query, incoming)
-        if self.source_cancelled(source_name, stream_token):
+        cancelled = (
+            self.batch_cancelled(source_name) if retain_superseded_batch
+            else self.source_cancelled(source_name, stream_token)
+        )
+        if cancelled:
             raise SearchCancelled("Search was superseded by a newer request.")
         with self.lock:
             state = self.source_states[source_name]
@@ -1104,6 +1149,13 @@ class SearchSession:
                 self.all_results[item["id"]] = item
             state["last_ids"] = [item["id"] for item in incoming]
             state["last_batch_count"] = int(group.get("count") or 0)
+            if (state["fetched"] == 0 and state["last_batch_count"] == 0
+                    and not group.get("error")):
+                # A successful empty first batch is a real cached outcome, not
+                # an untried provider. Keep it terminal across hide/show
+                # changes even when an exact-search expansion could otherwise
+                # ask the same provider for a larger window.
+                state["empty_result_cached"] = True
             state["fetched"] += state["last_batch_count"]
             state["rounds"] += 1
             state["exhausted"] = bool(group.get("exhausted"))
@@ -1185,6 +1237,8 @@ class SearchSession:
                     should_continue, reason = True, "awaiting first batch"
                 elif state["stop_reason"]:
                     should_continue, reason = False, state["stop_reason"]
+                elif state.get("empty_result_cached"):
+                    should_continue, reason = False, "no results (cached)"
                 elif state["exhausted"]:
                     should_continue, reason = False, "source exhausted"
                 elif (self.exact_phrases

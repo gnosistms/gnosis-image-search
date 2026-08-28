@@ -35,6 +35,11 @@ NGA_ARCHIVE_URL = (
 NGA_REFRESH_SECONDS = 7 * 24 * 60 * 60
 NGA_OBJECTS_SUFFIX = "/data/objects.csv"
 NGA_IMAGES_SUFFIX = "/data/published_images.csv"
+NGA_COMPOUND_CONCEPTS = {
+    # "Rose Cross" is the historical Rosicrucian concept, not an invitation
+    # to combine every catalog use of the color rose with every crossed shape.
+    ("rose", "cross"): ("rosicrucian",),
+}
 _LOC_IMAGE_SIZE = re.compile(r"#h=(\d+)&w=(\d+)$")
 _RASTER_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
 _HTML_TAG = re.compile(r"<[^>]+>")
@@ -1837,8 +1842,77 @@ class NGACatalog:
 
     @staticmethod
     def _fts_query(query: str) -> str:
-        terms = re.findall(r"[\w]+", str(query or ""), flags=re.UNICODE)
-        return " AND ".join(f'"{term}"*' for term in terms if len(term) > 1)
+        terms = NGACatalog._query_terms(query)
+        aliases = NGA_COMPOUND_CONCEPTS.get(terms, ())
+        if aliases:
+            phrase = " ".join(terms)
+            alternatives = [f'"{alias}"*' for alias in aliases]
+            alternatives.append(f'"{phrase}"')
+            return " OR ".join(alternatives)
+        if len(terms) == 1:
+            # Preserve useful partial matching for a single distinctive term.
+            return f'"{terms[0]}"*'
+        # Prefixes make common multiword searches explode (rose/rosette,
+        # cross/crossed/cross-hatching). Multiword retrieval uses whole tokens.
+        return " AND ".join(f'"{term}"' for term in terms)
+
+    @staticmethod
+    def _query_terms(query: str) -> tuple[str, ...]:
+        normalized = unicodedata.normalize("NFKC", str(query or "")).casefold()
+        return tuple(
+            term for term in re.findall(r"[\w]+", normalized, flags=re.UNICODE)
+            if len(term) > 1
+        )
+
+    @staticmethod
+    def _field_tokens(value: str) -> tuple[str, ...]:
+        normalized = unicodedata.normalize("NFKC", str(value or "")).casefold()
+        return tuple(re.findall(r"[\w]+", normalized, flags=re.UNICODE))
+
+    @staticmethod
+    def _contains_phrase(tokens: tuple[str, ...], phrase: tuple[str, ...]) -> bool:
+        return any(
+            tokens[index:index + len(phrase)] == phrase
+            for index in range(len(tokens) - len(phrase) + 1)
+        )
+
+    @staticmethod
+    def _terms_are_close(tokens: tuple[str, ...], terms: tuple[str, ...],
+                         window: int = 12) -> bool:
+        """Require all query concepts to occur in one compact metadata field."""
+        positions = {
+            term: [index for index, token in enumerate(tokens) if token == term]
+            for term in terms
+        }
+        if any(not indexes for indexes in positions.values()):
+            return False
+        return any(
+            all(any(abs(other - anchor) <= window for other in positions[term])
+                for term in terms)
+            for anchor in positions[terms[0]]
+        )
+
+    @classmethod
+    def _matches_focus_policy(cls, row: sqlite3.Row,
+                              terms: tuple[str, ...]) -> bool:
+        if len(terms) <= 1:
+            return True
+        # A multiword query must be supported coherently by one meaningful
+        # field. Medium, date, and classification may rank a hit but cannot
+        # manufacture one by supplying a stray term from another field.
+        strong_fields = tuple(
+            cls._field_tokens(row[field])
+            for field in ("title", "artist", "description")
+        )
+        aliases = NGA_COMPOUND_CONCEPTS.get(terms, ())
+        if aliases:
+            return any(
+                cls._contains_phrase(tokens, terms)
+                or any(any(token.startswith(alias) for token in tokens)
+                       for alias in aliases)
+                for tokens in strong_fields
+            )
+        return any(cls._terms_are_close(tokens, terms) for tokens in strong_fields)
 
     def search(self, query: str, need: int, cue=None) -> list[dict]:
         if not self.database_path.exists():
@@ -1847,15 +1921,24 @@ class NGACatalog:
         expression = self._fts_query(query)
         if not expression:
             return []
+        terms = self._query_terms(query)
+        target = max(need * 2, 20)
+        # Focus filtering happens after FTS retrieval. Scan beyond the display
+        # target so rejected lexical coincidences do not hide later good hits.
+        scan_limit = min(max(target * 20, 400), 5000)
         with sqlite3.connect(self.database_path) as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute("""
                 SELECT works.* FROM works_fts
                 JOIN works ON works.rowid = works_fts.rowid
-                WHERE works_fts MATCH ? ORDER BY bm25(works_fts) LIMIT ?
-            """, (expression, max(need * 2, 20))).fetchall()
+                WHERE works_fts MATCH ?
+                ORDER BY bm25(works_fts, 0.0, 8.0, 2.0, 0.1, 0.25, 0.5, 3.0)
+                LIMIT ?
+            """, (expression, scan_limit)).fetchall()
         out = []
         for row in rows:
+            if not self._matches_focus_policy(row, terms):
+                continue
             iiif = str(row["iiifurl"] or "").rstrip("/")
             title = str(row["title"] or "Untitled")
             out.append({
@@ -1877,4 +1960,6 @@ class NGACatalog:
                 "width": _as_int(row["width"]), "height": _as_int(row["height"]),
                 "description": str(row["description"] or ""),
             })
+            if len(out) >= target:
+                break
         return out

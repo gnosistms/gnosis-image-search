@@ -984,6 +984,11 @@ def wellcome(query, need, cue=None, *, exact_phrases=()):
             if not base:
                 continue
             out.append({"source": "wellcome", "source_id": iid,
+                        # Wellcome's full-text analyzer returns inflected/stemmed
+                        # word forms.  Let the UI expose evidence such as query
+                        # ``cross`` in metadata word ``crossed`` without applying
+                        # the same expansion to unrelated providers.
+                        "match_highlight_mode": "english_stem",
                         "work_id": work_id,
                         "is_primary_view": bool(primary_base),
                         "matched_image_url": (f"{matched_base}/full/max/0/default.jpg"
