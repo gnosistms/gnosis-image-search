@@ -1,0 +1,5598 @@
+{
+  "query": "Krishna",
+  "description": "Sanitized live snapshots, no URLs or identifying metadata. Not a full provider response recording.",
+  "elapsed_seconds": [
+    56,
+    77,
+    104,
+    169
+  ],
+  "snapshots": [
+    {
+      "revision": 51,
+      "policy": {
+        "gnosis": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 1,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "universal_comasonry": {
+          "continue": false,
+          "selected": true,
+          "reason": "source exhausted",
+          "fetched": 2,
+          "top_50_hits": 1,
+          "rounds": 2
+        },
+        "cleveland": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 7,
+          "top_50_hits": 4,
+          "rounds": 3
+        },
+        "met": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "rijksmuseum": {
+          "continue": true,
+          "selected": true,
+          "reason": "6 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 6,
+          "rounds": 4
+        },
+        "aic": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 1,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "getty": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "nga": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "harvard": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 3,
+          "top_50_hits": 1,
+          "rounds": 2
+        },
+        "yale": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "paris_musees": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "mia": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 7,
+          "top_50_hits": 4,
+          "rounds": 3
+        },
+        "loc": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 7,
+          "top_50_hits": 3,
+          "rounds": 3
+        },
+        "smk": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "wellcome": {
+          "continue": true,
+          "selected": true,
+          "reason": "1 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 1,
+          "rounds": 4
+        },
+        "vam": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 7,
+          "top_50_hits": 4,
+          "rounds": 3
+        },
+        "commons": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "europeana": {
+          "continue": true,
+          "selected": true,
+          "reason": "1 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 1,
+          "rounds": 4
+        }
+      },
+      "results": [
+        {
+          "id": "5069b8f8aec511b3",
+          "source": "mia",
+          "provider_rank": 1,
+          "width": 10000,
+          "height": 7103,
+          "pamela_score": 0.853429,
+          "pamela_rerank": true,
+          "semantic_score": 0.3833
+        },
+        {
+          "id": "002e326adbdf9ec7",
+          "source": "mia",
+          "provider_rank": 2,
+          "width": 7584,
+          "height": 9481,
+          "pamela_score": 0.758228,
+          "pamela_rerank": true,
+          "semantic_score": 0.38906
+        },
+        {
+          "id": "bc467120af1f51a4",
+          "source": "mia",
+          "provider_rank": 3,
+          "width": 4316,
+          "height": 6761,
+          "pamela_score": 0.79608,
+          "pamela_rerank": true,
+          "semantic_score": 0.39324
+        },
+        {
+          "id": "617130b4f2f4d01e",
+          "source": "mia",
+          "provider_rank": 4,
+          "width": 7693,
+          "height": 10279,
+          "pamela_score": 0.749262,
+          "pamela_rerank": true,
+          "semantic_score": 0.39753
+        },
+        {
+          "id": "dc7bb770e2f99d02",
+          "source": "commons",
+          "provider_rank": 1,
+          "width": 2818,
+          "height": 3873,
+          "pamela_score": 0.8283,
+          "pamela_rerank": true,
+          "semantic_score": 0.37279
+        },
+        {
+          "id": "1f06892f88991686",
+          "source": "mia",
+          "provider_rank": 5,
+          "width": 5896,
+          "height": 8953,
+          "pamela_score": 0.744965,
+          "pamela_rerank": true,
+          "semantic_score": 0.40022
+        },
+        {
+          "id": "5657296f04821757",
+          "source": "loc",
+          "provider_rank": 4,
+          "width": 4544,
+          "height": 5783,
+          "pamela_score": 0.772139,
+          "pamela_rerank": true,
+          "semantic_score": 0.36676
+        },
+        {
+          "id": "dcbe35be94e05ab3",
+          "source": "cleveland",
+          "provider_rank": 1,
+          "width": 3400,
+          "height": 2795,
+          "pamela_score": 0.812892,
+          "pamela_rerank": true,
+          "semantic_score": 0.39537
+        },
+        {
+          "id": "81acc5279ab72e69",
+          "source": "rijksmuseum",
+          "provider_rank": 1,
+          "width": 4062,
+          "height": 6146,
+          "pamela_score": 0.763112,
+          "pamela_rerank": true,
+          "semantic_score": 0.36479
+        },
+        {
+          "id": "322a5f1dcca076bf",
+          "source": "mia",
+          "provider_rank": 0,
+          "width": 2727,
+          "height": 3931,
+          "pamela_score": 0.797515,
+          "pamela_rerank": true,
+          "semantic_score": 0.38831
+        },
+        {
+          "id": "d3d38df68e8057de",
+          "source": "commons",
+          "provider_rank": 2,
+          "width": 2736,
+          "height": 3887,
+          "pamela_score": 0.797155,
+          "pamela_rerank": true,
+          "semantic_score": 0.38805
+        },
+        {
+          "id": "0b5649b2a1e21518",
+          "source": "rijksmuseum",
+          "provider_rank": 2,
+          "width": 5064,
+          "height": 3712,
+          "pamela_score": 0.753633,
+          "pamela_rerank": true,
+          "semantic_score": 0.37965
+        },
+        {
+          "id": "c7e8f5948e2f78a2",
+          "source": "mia",
+          "provider_rank": 6,
+          "width": 5292,
+          "height": 4060,
+          "pamela_score": 0.741579,
+          "pamela_rerank": true,
+          "semantic_score": 0.37376
+        },
+        {
+          "id": "5e6341de21eeef64",
+          "source": "cleveland",
+          "provider_rank": 2,
+          "width": 2522,
+          "height": 3400,
+          "pamela_score": 0.77044,
+          "pamela_rerank": true,
+          "semantic_score": 0.38268
+        },
+        {
+          "id": "339d3c23af633bf0",
+          "source": "wellcome",
+          "provider_rank": 2,
+          "width": 2425,
+          "height": 2965,
+          "pamela_score": 0.775918,
+          "pamela_rerank": true,
+          "semantic_score": 0.37829
+        },
+        {
+          "id": "8e357917b9663529",
+          "source": "vam",
+          "provider_rank": 6,
+          "width": 1711,
+          "height": 2500,
+          "pamela_score": 0.788996,
+          "pamela_rerank": true,
+          "semantic_score": 0.39535
+        },
+        {
+          "id": "a651560a0fe092b2",
+          "source": "vam",
+          "provider_rank": 5,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.782984,
+          "pamela_rerank": true,
+          "semantic_score": 0.39059
+        },
+        {
+          "id": "779a20a430e8e820",
+          "source": "vam",
+          "provider_rank": 4,
+          "width": 2500,
+          "height": 1870,
+          "pamela_score": 0.774759,
+          "pamela_rerank": true,
+          "semantic_score": 0.38126
+        },
+        {
+          "id": "034f54cabe72bc5b",
+          "source": "commons",
+          "provider_rank": 0,
+          "width": 1368,
+          "height": 1856,
+          "pamela_score": 0.805778,
+          "pamela_rerank": true,
+          "semantic_score": 0.3895
+        },
+        {
+          "id": "3dd08bffad51eb66",
+          "source": "rijksmuseum",
+          "provider_rank": 0,
+          "width": 4516,
+          "height": 6504,
+          "pamela_score": 0.687383,
+          "pamela_rerank": true,
+          "semantic_score": 0.36126
+        },
+        {
+          "id": "1558c9b6ae965fe1",
+          "source": "vam",
+          "provider_rank": 0,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.759455,
+          "pamela_rerank": true,
+          "semantic_score": 0.36417
+        },
+        {
+          "id": "c558521c3fe9158b",
+          "source": "vam",
+          "provider_rank": 2,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.742373,
+          "pamela_rerank": true,
+          "semantic_score": 0.40043
+        },
+        {
+          "id": "96e2277c660ba74c",
+          "source": "vam",
+          "provider_rank": 3,
+          "width": 2500,
+          "height": 1487,
+          "pamela_score": 0.748014,
+          "pamela_rerank": true,
+          "semantic_score": 0.40391
+        },
+        {
+          "id": "9f419098cfa5455b",
+          "source": "universal_comasonry",
+          "provider_rank": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2ced5903afed3626",
+          "source": "vam",
+          "provider_rank": 1,
+          "width": 2500,
+          "height": 1433,
+          "pamela_score": 0.714412,
+          "pamela_rerank": true,
+          "semantic_score": 0.39486
+        },
+        {
+          "id": "5b2c7c1e57ac6aee",
+          "source": "harvard",
+          "provider_rank": 0,
+          "width": 868,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "c4980da05214a26b",
+          "source": "harvard",
+          "provider_rank": 1,
+          "width": 711,
+          "height": 1024
+        },
+        {
+          "id": "6334849fe8b04f75",
+          "source": "europeana",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f5244003ab4c8151",
+          "source": "loc",
+          "provider_rank": 5,
+          "width": 2982,
+          "height": 3413,
+          "pamela_score": 0.643211,
+          "pamela_rerank": true,
+          "semantic_score": 0.39098
+        },
+        {
+          "id": "8d5fdcb745d94822",
+          "source": "wellcome",
+          "provider_rank": 3,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "a4fcff9de1a7ab0f",
+          "source": "universal_comasonry",
+          "provider_rank": 1,
+          "width": 1135,
+          "height": 2174,
+          "pamela_score": 0.683082,
+          "pamela_rerank": true,
+          "semantic_score": 0.42171
+        },
+        {
+          "id": "2b76fc5cf1e10474",
+          "source": "cleveland",
+          "provider_rank": 4,
+          "width": 2475,
+          "height": 3400
+        },
+        {
+          "id": "7786981a04df95da",
+          "source": "rijksmuseum",
+          "provider_rank": 4,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f8ee1b125545b17e",
+          "source": "cleveland",
+          "provider_rank": 3,
+          "width": 2341,
+          "height": 3400
+        },
+        {
+          "id": "2eefc41df70a49f8",
+          "source": "cleveland",
+          "provider_rank": 5,
+          "width": 2164,
+          "height": 3400
+        },
+        {
+          "id": "1c0ae57da79f9a9a",
+          "source": "rijksmuseum",
+          "provider_rank": 5,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "c377977b15381fe7",
+          "source": "commons",
+          "provider_rank": 3,
+          "width": 4000,
+          "height": 3002
+        },
+        {
+          "id": "ed5b7cecadcf1995",
+          "source": "commons",
+          "provider_rank": 4,
+          "width": 925,
+          "height": 644
+        },
+        {
+          "id": "6ecdfd55762b18ae",
+          "source": "rijksmuseum",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "01abfe3baab3cd41",
+          "source": "rijksmuseum",
+          "provider_rank": 3,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "7287210266c03fa8",
+          "source": "wellcome",
+          "provider_rank": 6,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "eb5e8d8bbddaf8d3",
+          "source": "cleveland",
+          "provider_rank": 6,
+          "width": 3400,
+          "height": 2351
+        },
+        {
+          "id": "d5e596109903acac",
+          "source": "rijksmuseum",
+          "provider_rank": 11,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2920a6475e2375ac",
+          "source": "rijksmuseum",
+          "provider_rank": 12,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "266be58721ae6bdc",
+          "source": "rijksmuseum",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "95435aef2629db41",
+          "source": "loc",
+          "provider_rank": 6,
+          "width": 3986,
+          "height": 3193,
+          "pamela_score": 0.599843,
+          "pamela_rerank": true,
+          "semantic_score": 0.41954
+        },
+        {
+          "id": "0adfe7b2ea08c64d",
+          "source": "rijksmuseum",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "1f359ae7d76474c6",
+          "source": "rijksmuseum",
+          "provider_rank": 14,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "22e681952e45e899",
+          "source": "wellcome",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0201e853fbaa99bd",
+          "source": "cleveland",
+          "provider_rank": 0,
+          "width": 2550,
+          "height": 3400,
+          "pamela_score": 0.577964,
+          "pamela_rerank": true,
+          "semantic_score": 0.45155
+        },
+        {
+          "id": "7c54c25c0635f8d6",
+          "source": "aic",
+          "provider_rank": 0,
+          "width": 3744,
+          "height": 4680
+        },
+        {
+          "id": "13fc4b444284a3c8",
+          "source": "europeana",
+          "provider_rank": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0542b9b2d82689e0",
+          "source": "wellcome",
+          "provider_rank": 0,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "931e89bf4b6d5d77",
+          "source": "europeana",
+          "provider_rank": 6,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "41e512061f91715a",
+          "source": "europeana",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "7689749b9d6e2fbc",
+          "source": "loc",
+          "provider_rank": 3,
+          "width": 1024,
+          "height": 696,
+          "pamela_score": 0.549226,
+          "pamela_rerank": true,
+          "semantic_score": 0.39985
+        },
+        {
+          "id": "6f110532f3b18a3b",
+          "source": "europeana",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "eaaec5dcbf99fe3c",
+          "source": "europeana",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "dbe6ad64119d254c",
+          "source": "harvard",
+          "provider_rank": 2,
+          "width": 611,
+          "height": 1024
+        },
+        {
+          "id": "e3dbbebaa40eff7f",
+          "source": "wellcome",
+          "provider_rank": 4,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "a00b275289dc2bd6",
+          "source": "wellcome",
+          "provider_rank": 5,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "949c6c3770672db1",
+          "source": "wellcome",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "1be02a191967f69f",
+          "source": "wellcome",
+          "provider_rank": 8,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "017ab3ae469e9a1a",
+          "source": "wellcome",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "16d8fb5593bb2fbd",
+          "source": "wellcome",
+          "provider_rank": 11,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "50036331a4a042c5",
+          "source": "wellcome",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "41defc47feab8f27",
+          "source": "wellcome",
+          "provider_rank": 12,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "d76725fabc46108e",
+          "source": "rijksmuseum",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "e00af9e0fe36a4b4",
+          "source": "wellcome",
+          "provider_rank": 14,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0134311226f7141c",
+          "source": "wellcome",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "909e352918ec62f0",
+          "source": "wellcome",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2512b09eb09077d9",
+          "source": "rijksmuseum",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "00577558441997ef",
+          "source": "gnosis",
+          "provider_rank": 0,
+          "width": 2560,
+          "height": 3200
+        },
+        {
+          "id": "5d8741cebec39499",
+          "source": "commons",
+          "provider_rank": 5,
+          "width": 1100,
+          "height": 1721
+        },
+        {
+          "id": "e6e163c7b922634e",
+          "source": "commons",
+          "provider_rank": 6,
+          "width": 1200,
+          "height": 1722
+        },
+        {
+          "id": "fce445caa6fa52bc",
+          "source": "commons",
+          "provider_rank": 7,
+          "width": 1618,
+          "height": 1200
+        },
+        {
+          "id": "e58fae7b3887ccb3",
+          "source": "commons",
+          "provider_rank": 8,
+          "width": 1100,
+          "height": 1588
+        },
+        {
+          "id": "2896e6ef912040e0",
+          "source": "commons",
+          "provider_rank": 9,
+          "width": 1100,
+          "height": 1596
+        },
+        {
+          "id": "61557182114576a4",
+          "source": "rijksmuseum",
+          "provider_rank": 6,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "db4b4a71d4f156b6",
+          "source": "commons",
+          "provider_rank": 10,
+          "width": 1100,
+          "height": 1601
+        },
+        {
+          "id": "8b08a88f9a1c55b9",
+          "source": "commons",
+          "provider_rank": 11,
+          "width": 3229,
+          "height": 4000
+        },
+        {
+          "id": "2d8cdfec72cef3b2",
+          "source": "commons",
+          "provider_rank": 12,
+          "width": 3937,
+          "height": 2540
+        },
+        {
+          "id": "d37b871fac81b1b1",
+          "source": "commons",
+          "provider_rank": 13,
+          "width": 1463,
+          "height": 1870
+        },
+        {
+          "id": "5dd8558946f0ec4c",
+          "source": "commons",
+          "provider_rank": 14,
+          "width": 3456,
+          "height": 4000
+        },
+        {
+          "id": "75fd3fc0f9f6ba67",
+          "source": "rijksmuseum",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "79608b75da15686a",
+          "source": "commons",
+          "provider_rank": 15,
+          "width": 4000,
+          "height": 2358
+        },
+        {
+          "id": "0c2bda1955d29f4a",
+          "source": "commons",
+          "provider_rank": 16,
+          "width": 3855,
+          "height": 2874
+        },
+        {
+          "id": "a9f74d28da9642d8",
+          "source": "wellcome",
+          "provider_rank": 1,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.704952,
+          "pamela_rerank": true,
+          "semantic_score": 0.41326
+        }
+      ]
+    },
+    {
+      "revision": 72,
+      "policy": {
+        "gnosis": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 3,
+          "top_50_hits": 1,
+          "rounds": 2
+        },
+        "universal_comasonry": {
+          "continue": false,
+          "selected": true,
+          "reason": "source exhausted",
+          "fetched": 2,
+          "top_50_hits": 0,
+          "rounds": 2
+        },
+        "cleveland": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 7,
+          "top_50_hits": 0,
+          "rounds": 3
+        },
+        "met": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "rijksmuseum": {
+          "continue": true,
+          "selected": true,
+          "reason": "1 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 1,
+          "rounds": 4
+        },
+        "aic": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 3,
+          "top_50_hits": 0,
+          "rounds": 2
+        },
+        "getty": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "nga": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "harvard": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "yale": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "paris_musees": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "mia": {
+          "continue": true,
+          "selected": true,
+          "reason": "10 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 10,
+          "rounds": 4
+        },
+        "loc": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "smk": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "wellcome": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "vam": {
+          "continue": true,
+          "selected": true,
+          "reason": "1 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 1,
+          "rounds": 4
+        },
+        "commons": {
+          "continue": true,
+          "selected": true,
+          "reason": "6 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 6,
+          "rounds": 4
+        },
+        "europeana": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 27,
+          "top_50_hits": 0,
+          "rounds": 5
+        }
+      },
+      "results": [
+        {
+          "id": "5069b8f8aec511b3",
+          "source": "mia",
+          "provider_rank": 1,
+          "width": 10000,
+          "height": 7103,
+          "pamela_score": 0.853429,
+          "pamela_rerank": true,
+          "semantic_score": 0.3833
+        },
+        {
+          "id": "32253732e3675ed1",
+          "source": "mia",
+          "provider_rank": 11,
+          "width": 9537,
+          "height": 12060,
+          "pamela_score": 0.805538,
+          "pamela_rerank": true,
+          "semantic_score": 0.34618
+        },
+        {
+          "id": "58cfcbf639cab5b0",
+          "source": "mia",
+          "provider_rank": 10,
+          "width": 6109,
+          "height": 8273,
+          "pamela_score": 0.82124,
+          "pamela_rerank": true,
+          "semantic_score": 0.40176
+        },
+        {
+          "id": "103f0dbd8c70d861",
+          "source": "mia",
+          "provider_rank": 12,
+          "width": 5792,
+          "height": 8833,
+          "pamela_score": 0.820618,
+          "pamela_rerank": true,
+          "semantic_score": 0.3753
+        },
+        {
+          "id": "fecafe94dbc8240d",
+          "source": "mia",
+          "provider_rank": 8,
+          "width": 5936,
+          "height": 8952,
+          "pamela_score": 0.794612,
+          "pamela_rerank": true,
+          "semantic_score": 0.39305
+        },
+        {
+          "id": "d276d08e015776c5",
+          "source": "mia",
+          "provider_rank": 13,
+          "width": 5492,
+          "height": 3535,
+          "pamela_score": 0.840691,
+          "pamela_rerank": true,
+          "semantic_score": 0.36313
+        },
+        {
+          "id": "002e326adbdf9ec7",
+          "source": "mia",
+          "provider_rank": 2,
+          "width": 7584,
+          "height": 9481,
+          "pamela_score": 0.758228,
+          "pamela_rerank": true,
+          "semantic_score": 0.38906
+        },
+        {
+          "id": "bc467120af1f51a4",
+          "source": "mia",
+          "provider_rank": 3,
+          "width": 4316,
+          "height": 6761,
+          "pamela_score": 0.79608,
+          "pamela_rerank": true,
+          "semantic_score": 0.39324
+        },
+        {
+          "id": "61f604687c30ef14",
+          "source": "mia",
+          "provider_rank": 16,
+          "width": 6572,
+          "height": 10044,
+          "pamela_score": 0.756815,
+          "pamela_rerank": true,
+          "semantic_score": 0.38776
+        },
+        {
+          "id": "617130b4f2f4d01e",
+          "source": "mia",
+          "provider_rank": 4,
+          "width": 7693,
+          "height": 10279,
+          "pamela_score": 0.749262,
+          "pamela_rerank": true,
+          "semantic_score": 0.39753
+        },
+        {
+          "id": "dc7bb770e2f99d02",
+          "source": "commons",
+          "provider_rank": 1,
+          "width": 2818,
+          "height": 3873,
+          "pamela_score": 0.8283,
+          "pamela_rerank": true,
+          "semantic_score": 0.37279
+        },
+        {
+          "id": "1f06892f88991686",
+          "source": "mia",
+          "provider_rank": 5,
+          "width": 5896,
+          "height": 8953,
+          "pamela_score": 0.744965,
+          "pamela_rerank": true,
+          "semantic_score": 0.40022
+        },
+        {
+          "id": "5657296f04821757",
+          "source": "loc",
+          "provider_rank": 4,
+          "width": 4544,
+          "height": 5783,
+          "pamela_score": 0.772139,
+          "pamela_rerank": true,
+          "semantic_score": 0.36676
+        },
+        {
+          "id": "dcbe35be94e05ab3",
+          "source": "cleveland",
+          "provider_rank": 1,
+          "width": 3400,
+          "height": 2795,
+          "pamela_score": 0.812892,
+          "pamela_rerank": true,
+          "semantic_score": 0.39537
+        },
+        {
+          "id": "81acc5279ab72e69",
+          "source": "rijksmuseum",
+          "provider_rank": 1,
+          "width": 4062,
+          "height": 6146,
+          "pamela_score": 0.763112,
+          "pamela_rerank": true,
+          "semantic_score": 0.36479
+        },
+        {
+          "id": "01abfe3baab3cd41",
+          "source": "rijksmuseum",
+          "provider_rank": 3,
+          "width": 3424,
+          "height": 4500,
+          "pamela_score": 0.784672,
+          "pamela_rerank": true,
+          "semantic_score": 0.39665
+        },
+        {
+          "id": "61557182114576a4",
+          "source": "rijksmuseum",
+          "provider_rank": 6,
+          "width": 3940,
+          "height": 5794,
+          "pamela_score": 0.762644,
+          "pamela_rerank": true,
+          "semantic_score": 0.34283
+        },
+        {
+          "id": "322a5f1dcca076bf",
+          "source": "mia",
+          "provider_rank": 0,
+          "width": 2727,
+          "height": 3931,
+          "pamela_score": 0.797515,
+          "pamela_rerank": true,
+          "semantic_score": 0.38831
+        },
+        {
+          "id": "d3d38df68e8057de",
+          "source": "commons",
+          "provider_rank": 2,
+          "width": 2736,
+          "height": 3887,
+          "pamela_score": 0.797155,
+          "pamela_rerank": true,
+          "semantic_score": 0.38805
+        },
+        {
+          "id": "fc6b50bc9f9b7521",
+          "source": "mia",
+          "provider_rank": 9,
+          "width": 7149,
+          "height": 9575,
+          "pamela_score": 0.710069,
+          "pamela_rerank": true,
+          "semantic_score": 0.44525
+        },
+        {
+          "id": "8b08a88f9a1c55b9",
+          "source": "commons",
+          "provider_rank": 11,
+          "width": 3229,
+          "height": 4000,
+          "pamela_score": 0.772443,
+          "pamela_rerank": true,
+          "semantic_score": 0.37396
+        },
+        {
+          "id": "a00b275289dc2bd6",
+          "source": "wellcome",
+          "provider_rank": 5,
+          "width": 2244,
+          "height": 3370,
+          "pamela_score": 0.798494,
+          "pamela_rerank": true,
+          "semantic_score": 0.41569
+        },
+        {
+          "id": "5dd8558946f0ec4c",
+          "source": "commons",
+          "provider_rank": 14,
+          "width": 3456,
+          "height": 4000,
+          "pamela_score": 0.768145,
+          "pamela_rerank": true,
+          "semantic_score": 0.36523
+        },
+        {
+          "id": "0b5649b2a1e21518",
+          "source": "rijksmuseum",
+          "provider_rank": 2,
+          "width": 5064,
+          "height": 3712,
+          "pamela_score": 0.753633,
+          "pamela_rerank": true,
+          "semantic_score": 0.37965
+        },
+        {
+          "id": "0c2bda1955d29f4a",
+          "source": "commons",
+          "provider_rank": 16,
+          "width": 3855,
+          "height": 2874,
+          "pamela_score": 0.776587,
+          "pamela_rerank": true,
+          "semantic_score": 0.39569
+        },
+        {
+          "id": "00577558441997ef",
+          "source": "gnosis",
+          "provider_rank": 0,
+          "width": 2560,
+          "height": 3200,
+          "pamela_score": 0.787947,
+          "pamela_rerank": true,
+          "semantic_score": 0.45958
+        },
+        {
+          "id": "c7e8f5948e2f78a2",
+          "source": "mia",
+          "provider_rank": 6,
+          "width": 5292,
+          "height": 4060,
+          "pamela_score": 0.741579,
+          "pamela_rerank": true,
+          "semantic_score": 0.37376
+        },
+        {
+          "id": "2d8cdfec72cef3b2",
+          "source": "commons",
+          "provider_rank": 12,
+          "width": 3937,
+          "height": 2540,
+          "pamela_score": 0.768806,
+          "pamela_rerank": true,
+          "semantic_score": 0.42122
+        },
+        {
+          "id": "5e6341de21eeef64",
+          "source": "cleveland",
+          "provider_rank": 2,
+          "width": 2522,
+          "height": 3400,
+          "pamela_score": 0.77044,
+          "pamela_rerank": true,
+          "semantic_score": 0.38268
+        },
+        {
+          "id": "339d3c23af633bf0",
+          "source": "wellcome",
+          "provider_rank": 2,
+          "width": 2425,
+          "height": 2965,
+          "pamela_score": 0.775918,
+          "pamela_rerank": true,
+          "semantic_score": 0.37829
+        },
+        {
+          "id": "8e357917b9663529",
+          "source": "vam",
+          "provider_rank": 6,
+          "width": 1711,
+          "height": 2500,
+          "pamela_score": 0.788996,
+          "pamela_rerank": true,
+          "semantic_score": 0.39535
+        },
+        {
+          "id": "a651560a0fe092b2",
+          "source": "vam",
+          "provider_rank": 5,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.782984,
+          "pamela_rerank": true,
+          "semantic_score": 0.39059
+        },
+        {
+          "id": "779a20a430e8e820",
+          "source": "vam",
+          "provider_rank": 4,
+          "width": 2500,
+          "height": 1870,
+          "pamela_score": 0.774759,
+          "pamela_rerank": true,
+          "semantic_score": 0.38126
+        },
+        {
+          "id": "79608b75da15686a",
+          "source": "commons",
+          "provider_rank": 15,
+          "width": 4000,
+          "height": 2358,
+          "pamela_score": 0.74053,
+          "pamela_rerank": true,
+          "semantic_score": 0.38017
+        },
+        {
+          "id": "034f54cabe72bc5b",
+          "source": "commons",
+          "provider_rank": 0,
+          "width": 1368,
+          "height": 1856,
+          "pamela_score": 0.805778,
+          "pamela_rerank": true,
+          "semantic_score": 0.3895
+        },
+        {
+          "id": "3dd08bffad51eb66",
+          "source": "rijksmuseum",
+          "provider_rank": 0,
+          "width": 4516,
+          "height": 6504,
+          "pamela_score": 0.687383,
+          "pamela_rerank": true,
+          "semantic_score": 0.36126
+        },
+        {
+          "id": "7786981a04df95da",
+          "source": "rijksmuseum",
+          "provider_rank": 4,
+          "width": 3112,
+          "height": 6236,
+          "pamela_score": 0.69827,
+          "pamela_rerank": true,
+          "semantic_score": 0.38855
+        },
+        {
+          "id": "1c0ae57da79f9a9a",
+          "source": "rijksmuseum",
+          "provider_rank": 5,
+          "width": 4596,
+          "height": 6366,
+          "pamela_score": 0.680451,
+          "pamela_rerank": true,
+          "semantic_score": 0.42806
+        },
+        {
+          "id": "4d7c2e283e3d73fa",
+          "source": "mia",
+          "provider_rank": 7,
+          "width": 2533,
+          "height": 1863,
+          "pamela_score": 0.76096,
+          "pamela_rerank": true,
+          "semantic_score": 0.38472
+        },
+        {
+          "id": "1558c9b6ae965fe1",
+          "source": "vam",
+          "provider_rank": 0,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.759455,
+          "pamela_rerank": true,
+          "semantic_score": 0.36417
+        },
+        {
+          "id": "f8c25fc3af814593",
+          "source": "mia",
+          "provider_rank": 14,
+          "width": 2376,
+          "height": 5034,
+          "pamela_score": 0.710101,
+          "pamela_rerank": true,
+          "semantic_score": 0.39459
+        },
+        {
+          "id": "7c54c25c0635f8d6",
+          "source": "aic",
+          "provider_rank": 0,
+          "width": 3744,
+          "height": 4680,
+          "pamela_score": 0.689455,
+          "pamela_rerank": true,
+          "semantic_score": 0.404
+        },
+        {
+          "id": "c558521c3fe9158b",
+          "source": "vam",
+          "provider_rank": 2,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.742373,
+          "pamela_rerank": true,
+          "semantic_score": 0.40043
+        },
+        {
+          "id": "c377977b15381fe7",
+          "source": "commons",
+          "provider_rank": 3,
+          "width": 4000,
+          "height": 3002,
+          "pamela_score": 0.698041,
+          "pamela_rerank": true,
+          "semantic_score": 0.37343
+        },
+        {
+          "id": "96e2277c660ba74c",
+          "source": "vam",
+          "provider_rank": 3,
+          "width": 2500,
+          "height": 1487,
+          "pamela_score": 0.748014,
+          "pamela_rerank": true,
+          "semantic_score": 0.40391
+        },
+        {
+          "id": "fce445caa6fa52bc",
+          "source": "commons",
+          "provider_rank": 7,
+          "width": 1618,
+          "height": 1200,
+          "pamela_score": 0.775913,
+          "pamela_rerank": true,
+          "semantic_score": 0.37581
+        },
+        {
+          "id": "9f419098cfa5455b",
+          "source": "universal_comasonry",
+          "provider_rank": 0,
+          "width": 1135,
+          "height": 714,
+          "pamela_score": 0.82275,
+          "pamela_rerank": true,
+          "semantic_score": 0.43407
+        },
+        {
+          "id": "72880f16e4f43225",
+          "source": "gnosis",
+          "provider_rank": 2,
+          "width": 2208,
+          "height": 3420
+        },
+        {
+          "id": "440d336c742ee36a",
+          "source": "mia",
+          "provider_rank": 15,
+          "width": 2206,
+          "height": 2758,
+          "pamela_score": 0.69056,
+          "pamela_rerank": true,
+          "semantic_score": 0.37804
+        },
+        {
+          "id": "2ced5903afed3626",
+          "source": "vam",
+          "provider_rank": 1,
+          "width": 2500,
+          "height": 1433,
+          "pamela_score": 0.714412,
+          "pamela_rerank": true,
+          "semantic_score": 0.39486
+        },
+        {
+          "id": "5b2c7c1e57ac6aee",
+          "source": "harvard",
+          "provider_rank": 0,
+          "width": 868,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "e6e163c7b922634e",
+          "source": "commons",
+          "provider_rank": 6,
+          "width": 1200,
+          "height": 1722,
+          "pamela_score": 0.721076,
+          "pamela_rerank": true,
+          "semantic_score": 0.39195
+        },
+        {
+          "id": "c4980da05214a26b",
+          "source": "harvard",
+          "provider_rank": 1,
+          "width": 711,
+          "height": 1024
+        },
+        {
+          "id": "6334849fe8b04f75",
+          "source": "europeana",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "c6c558c2e90063df",
+          "source": "vam",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f5244003ab4c8151",
+          "source": "loc",
+          "provider_rank": 5,
+          "width": 2982,
+          "height": 3413,
+          "pamela_score": 0.643211,
+          "pamela_rerank": true,
+          "semantic_score": 0.39098
+        },
+        {
+          "id": "3e5910a1983840f3",
+          "source": "vam",
+          "provider_rank": 11,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "a0b8928731966d45",
+          "source": "vam",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "7287210266c03fa8",
+          "source": "wellcome",
+          "provider_rank": 6,
+          "width": 3304,
+          "height": 2388,
+          "pamela_score": 0.650554,
+          "pamela_rerank": true,
+          "semantic_score": 0.41042
+        },
+        {
+          "id": "6f4a7bd57535d989",
+          "source": "vam",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "ad42f271b0fa63c8",
+          "source": "vam",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "5d8741cebec39499",
+          "source": "commons",
+          "provider_rank": 5,
+          "width": 1100,
+          "height": 1721,
+          "pamela_score": 0.705748,
+          "pamela_rerank": true,
+          "semantic_score": 0.3931
+        },
+        {
+          "id": "d37b871fac81b1b1",
+          "source": "commons",
+          "provider_rank": 13,
+          "width": 1463,
+          "height": 1870,
+          "pamela_score": 0.686944,
+          "pamela_rerank": true,
+          "semantic_score": 0.39746
+        },
+        {
+          "id": "811811799f45adc9",
+          "source": "harvard",
+          "provider_rank": 3,
+          "width": 630,
+          "height": 1024
+        },
+        {
+          "id": "db4b4a71d4f156b6",
+          "source": "commons",
+          "provider_rank": 10,
+          "width": 1100,
+          "height": 1601,
+          "pamela_score": 0.700377,
+          "pamela_rerank": true,
+          "semantic_score": 0.43598
+        },
+        {
+          "id": "a4fcff9de1a7ab0f",
+          "source": "universal_comasonry",
+          "provider_rank": 1,
+          "width": 1135,
+          "height": 2174,
+          "pamela_score": 0.683082,
+          "pamela_rerank": true,
+          "semantic_score": 0.42171
+        },
+        {
+          "id": "7c7a1b278b056ed9",
+          "source": "vam",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2b76fc5cf1e10474",
+          "source": "cleveland",
+          "provider_rank": 4,
+          "width": 2475,
+          "height": 3400
+        },
+        {
+          "id": "f8ee1b125545b17e",
+          "source": "cleveland",
+          "provider_rank": 3,
+          "width": 2341,
+          "height": 3400
+        },
+        {
+          "id": "310f0da1953152a0",
+          "source": "vam",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2eefc41df70a49f8",
+          "source": "cleveland",
+          "provider_rank": 5,
+          "width": 2164,
+          "height": 3400
+        },
+        {
+          "id": "2caae0806a1d352a",
+          "source": "harvard",
+          "provider_rank": 5,
+          "width": 9174,
+          "height": 6309
+        },
+        {
+          "id": "efce766d2ca484bd",
+          "source": "harvard",
+          "provider_rank": 6,
+          "width": 841,
+          "height": 1024
+        },
+        {
+          "id": "6ecdfd55762b18ae",
+          "source": "rijksmuseum",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "7edd2e927283c414",
+          "source": "harvard",
+          "provider_rank": 7,
+          "width": 781,
+          "height": 1024
+        },
+        {
+          "id": "44995c9acce25502",
+          "source": "vam",
+          "provider_rank": 8,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "eb5e8d8bbddaf8d3",
+          "source": "cleveland",
+          "provider_rank": 6,
+          "width": 3400,
+          "height": 2351
+        },
+        {
+          "id": "2896e6ef912040e0",
+          "source": "commons",
+          "provider_rank": 9,
+          "width": 1100,
+          "height": 1596,
+          "pamela_score": 0.68722,
+          "pamela_rerank": true,
+          "semantic_score": 0.44614
+        },
+        {
+          "id": "d5e596109903acac",
+          "source": "rijksmuseum",
+          "provider_rank": 11,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2920a6475e2375ac",
+          "source": "rijksmuseum",
+          "provider_rank": 12,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "557a632bfc816c12",
+          "source": "harvard",
+          "provider_rank": 8,
+          "width": 807,
+          "height": 1024
+        },
+        {
+          "id": "266be58721ae6bdc",
+          "source": "rijksmuseum",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "5284cc9d564531d0",
+          "source": "harvard",
+          "provider_rank": 9,
+          "width": 1950,
+          "height": 2550
+        },
+        {
+          "id": "95435aef2629db41",
+          "source": "loc",
+          "provider_rank": 6,
+          "width": 3986,
+          "height": 3193,
+          "pamela_score": 0.599843,
+          "pamela_rerank": true,
+          "semantic_score": 0.41954
+        },
+        {
+          "id": "a9ae6f517f432c1b",
+          "source": "harvard",
+          "provider_rank": 11,
+          "width": 675,
+          "height": 1024
+        },
+        {
+          "id": "6899952af3f1be95",
+          "source": "harvard",
+          "provider_rank": 12,
+          "width": 1024,
+          "height": 725
+        },
+        {
+          "id": "e8c2bfefa06f08bc",
+          "source": "harvard",
+          "provider_rank": 13,
+          "width": 710,
+          "height": 1024
+        },
+        {
+          "id": "0adfe7b2ea08c64d",
+          "source": "rijksmuseum",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "1f359ae7d76474c6",
+          "source": "rijksmuseum",
+          "provider_rank": 14,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "18ecfb6ce2701523",
+          "source": "harvard",
+          "provider_rank": 15,
+          "width": 737,
+          "height": 1024
+        },
+        {
+          "id": "0305627af76a7e1b",
+          "source": "harvard",
+          "provider_rank": 16,
+          "width": 717,
+          "height": 1024
+        },
+        {
+          "id": "22e681952e45e899",
+          "source": "wellcome",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "e58fae7b3887ccb3",
+          "source": "commons",
+          "provider_rank": 8,
+          "width": 1100,
+          "height": 1588,
+          "pamela_score": 0.661437,
+          "pamela_rerank": true,
+          "semantic_score": 0.40855
+        },
+        {
+          "id": "931e89bf4b6d5d77",
+          "source": "europeana",
+          "provider_rank": 6,
+          "width": 512,
+          "height": 376,
+          "pamela_score": 0.774075,
+          "pamela_rerank": true,
+          "semantic_score": 0.37953
+        },
+        {
+          "id": "ed5b7cecadcf1995",
+          "source": "commons",
+          "provider_rank": 4,
+          "width": 925,
+          "height": 644,
+          "pamela_score": 0.702538,
+          "pamela_rerank": true,
+          "semantic_score": 0.3683
+        },
+        {
+          "id": "0201e853fbaa99bd",
+          "source": "cleveland",
+          "provider_rank": 0,
+          "width": 2550,
+          "height": 3400,
+          "pamela_score": 0.577964,
+          "pamela_rerank": true,
+          "semantic_score": 0.45155
+        },
+        {
+          "id": "0542b9b2d82689e0",
+          "source": "wellcome",
+          "provider_rank": 0,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "41e512061f91715a",
+          "source": "europeana",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "6f110532f3b18a3b",
+          "source": "europeana",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "eaaec5dcbf99fe3c",
+          "source": "europeana",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "876ddf8da3a5b370",
+          "source": "europeana",
+          "provider_rank": 17,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "69d95118cba4cfd7",
+          "source": "europeana",
+          "provider_rank": 18,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "d09dce8384025b22",
+          "source": "europeana",
+          "provider_rank": 19,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "58cfbe917de4fc7c",
+          "source": "europeana",
+          "provider_rank": 20,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "ff7bd92867f752fe",
+          "source": "europeana",
+          "provider_rank": 21,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "4228c6ffadecef37",
+          "source": "europeana",
+          "provider_rank": 22,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "8b18e5fe624931c3",
+          "source": "europeana",
+          "provider_rank": 23,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "fa77baf7958188e6",
+          "source": "europeana",
+          "provider_rank": 24,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0cf0e52f8bb798fe",
+          "source": "europeana",
+          "provider_rank": 25,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "64d24b428b8de955",
+          "source": "europeana",
+          "provider_rank": 26,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "90d41720d0fbd482",
+          "source": "aic",
+          "provider_rank": 1,
+          "width": 1173,
+          "height": 2250
+        },
+        {
+          "id": "dbe6ad64119d254c",
+          "source": "harvard",
+          "provider_rank": 2,
+          "width": 611,
+          "height": 1024
+        },
+        {
+          "id": "dbe7935d8713b052",
+          "source": "aic",
+          "provider_rank": 2,
+          "width": 5428,
+          "height": 7230
+        },
+        {
+          "id": "e3dbbebaa40eff7f",
+          "source": "wellcome",
+          "provider_rank": 4,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "f3476b4951e81e9f",
+          "source": "harvard",
+          "provider_rank": 4,
+          "width": 772,
+          "height": 1024
+        },
+        {
+          "id": "949c6c3770672db1",
+          "source": "wellcome",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "df55750492d13836",
+          "source": "loc",
+          "provider_rank": 7,
+          "width": 3995,
+          "height": 3265
+        },
+        {
+          "id": "fdcc8ffdb08a8676",
+          "source": "europeana",
+          "provider_rank": 8,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "4ddbca1ce2846eb6",
+          "source": "loc",
+          "provider_rank": 8,
+          "width": 4036,
+          "height": 3192
+        },
+        {
+          "id": "4d87811ffa00ee3f",
+          "source": "loc",
+          "provider_rank": 9,
+          "width": 3160,
+          "height": 3949
+        },
+        {
+          "id": "1be02a191967f69f",
+          "source": "wellcome",
+          "provider_rank": 8,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "75a01d5108f407a4",
+          "source": "loc",
+          "provider_rank": 10,
+          "width": 3997,
+          "height": 3176
+        },
+        {
+          "id": "0d8327bda2d39139",
+          "source": "loc",
+          "provider_rank": 11,
+          "width": 3248,
+          "height": 3992
+        },
+        {
+          "id": "017ab3ae469e9a1a",
+          "source": "wellcome",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "739aab1bde739130",
+          "source": "loc",
+          "provider_rank": 12,
+          "width": 3182,
+          "height": 3971
+        },
+        {
+          "id": "9bad488b69fef25f",
+          "source": "loc",
+          "provider_rank": 13,
+          "width": 3999,
+          "height": 3216
+        },
+        {
+          "id": "16d8fb5593bb2fbd",
+          "source": "wellcome",
+          "provider_rank": 11,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "50036331a4a042c5",
+          "source": "wellcome",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "41defc47feab8f27",
+          "source": "wellcome",
+          "provider_rank": 12,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "97e23d53db205e2d",
+          "source": "harvard",
+          "provider_rank": 10,
+          "width": 1024,
+          "height": 914
+        },
+        {
+          "id": "d76725fabc46108e",
+          "source": "rijksmuseum",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "e00af9e0fe36a4b4",
+          "source": "wellcome",
+          "provider_rank": 14,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0134311226f7141c",
+          "source": "wellcome",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "7689749b9d6e2fbc",
+          "source": "loc",
+          "provider_rank": 3,
+          "width": 1024,
+          "height": 696,
+          "pamela_score": 0.549226,
+          "pamela_rerank": true,
+          "semantic_score": 0.39985
+        },
+        {
+          "id": "909e352918ec62f0",
+          "source": "wellcome",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2512b09eb09077d9",
+          "source": "rijksmuseum",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f783ce2b3685ed36",
+          "source": "harvard",
+          "provider_rank": 14,
+          "width": 7298,
+          "height": 5607
+        },
+        {
+          "id": "77d7598bf781ff81",
+          "source": "loc",
+          "provider_rank": 14,
+          "width": 1024,
+          "height": 683
+        },
+        {
+          "id": "810d3f8a83eca7cf",
+          "source": "loc",
+          "provider_rank": 16,
+          "width": 1024,
+          "height": 683
+        },
+        {
+          "id": "7b77cd6d5e6cf435",
+          "source": "gnosis",
+          "provider_rank": 1,
+          "width": 2521,
+          "height": 3200
+        },
+        {
+          "id": "75fd3fc0f9f6ba67",
+          "source": "rijksmuseum",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "a9f74d28da9642d8",
+          "source": "wellcome",
+          "provider_rank": 1,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.704952,
+          "pamela_rerank": true,
+          "semantic_score": 0.41326
+        },
+        {
+          "id": "8d5fdcb745d94822",
+          "source": "wellcome",
+          "provider_rank": 3,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.71067,
+          "pamela_rerank": true,
+          "semantic_score": 0.39449
+        }
+      ]
+    },
+    {
+      "revision": 77,
+      "policy": {
+        "gnosis": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 3,
+          "top_50_hits": 0,
+          "rounds": 2
+        },
+        "universal_comasonry": {
+          "continue": false,
+          "selected": true,
+          "reason": "source exhausted",
+          "fetched": 2,
+          "top_50_hits": 0,
+          "rounds": 2
+        },
+        "cleveland": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "met": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "rijksmuseum": {
+          "continue": true,
+          "selected": true,
+          "reason": "8 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 8,
+          "rounds": 4
+        },
+        "aic": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 7,
+          "top_50_hits": 0,
+          "rounds": 3
+        },
+        "getty": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "nga": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "harvard": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "yale": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "paris_musees": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "mia": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 27,
+          "top_50_hits": 0,
+          "rounds": 5
+        },
+        "loc": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "smk": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "wellcome": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "vam": {
+          "continue": true,
+          "selected": true,
+          "reason": "1 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 1,
+          "rounds": 4
+        },
+        "commons": {
+          "continue": true,
+          "selected": true,
+          "reason": "5 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 5,
+          "rounds": 4
+        },
+        "europeana": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 27,
+          "top_50_hits": 0,
+          "rounds": 5
+        }
+      },
+      "results": [
+        {
+          "id": "5069b8f8aec511b3",
+          "source": "mia",
+          "provider_rank": 1,
+          "width": 10000,
+          "height": 7103,
+          "pamela_score": 0.853429,
+          "pamela_rerank": true,
+          "semantic_score": 0.3833
+        },
+        {
+          "id": "32253732e3675ed1",
+          "source": "mia",
+          "provider_rank": 11,
+          "width": 9537,
+          "height": 12060,
+          "pamela_score": 0.805538,
+          "pamela_rerank": true,
+          "semantic_score": 0.34618
+        },
+        {
+          "id": "58cfcbf639cab5b0",
+          "source": "mia",
+          "provider_rank": 10,
+          "width": 6109,
+          "height": 8273,
+          "pamela_score": 0.82124,
+          "pamela_rerank": true,
+          "semantic_score": 0.40176
+        },
+        {
+          "id": "103f0dbd8c70d861",
+          "source": "mia",
+          "provider_rank": 12,
+          "width": 5792,
+          "height": 8833,
+          "pamela_score": 0.820618,
+          "pamela_rerank": true,
+          "semantic_score": 0.3753
+        },
+        {
+          "id": "fecafe94dbc8240d",
+          "source": "mia",
+          "provider_rank": 8,
+          "width": 5936,
+          "height": 8952,
+          "pamela_score": 0.794612,
+          "pamela_rerank": true,
+          "semantic_score": 0.39305
+        },
+        {
+          "id": "d276d08e015776c5",
+          "source": "mia",
+          "provider_rank": 13,
+          "width": 5492,
+          "height": 3535,
+          "pamela_score": 0.840691,
+          "pamela_rerank": true,
+          "semantic_score": 0.36313
+        },
+        {
+          "id": "002e326adbdf9ec7",
+          "source": "mia",
+          "provider_rank": 2,
+          "width": 7584,
+          "height": 9481,
+          "pamela_score": 0.758228,
+          "pamela_rerank": true,
+          "semantic_score": 0.38906
+        },
+        {
+          "id": "bc467120af1f51a4",
+          "source": "mia",
+          "provider_rank": 3,
+          "width": 4316,
+          "height": 6761,
+          "pamela_score": 0.79608,
+          "pamela_rerank": true,
+          "semantic_score": 0.39324
+        },
+        {
+          "id": "1f359ae7d76474c6",
+          "source": "rijksmuseum",
+          "provider_rank": 14,
+          "width": 4254,
+          "height": 5472,
+          "pamela_score": 0.805521,
+          "pamela_rerank": true,
+          "semantic_score": 0.38267
+        },
+        {
+          "id": "61f604687c30ef14",
+          "source": "mia",
+          "provider_rank": 16,
+          "width": 6572,
+          "height": 10044,
+          "pamela_score": 0.756815,
+          "pamela_rerank": true,
+          "semantic_score": 0.38776
+        },
+        {
+          "id": "617130b4f2f4d01e",
+          "source": "mia",
+          "provider_rank": 4,
+          "width": 7693,
+          "height": 10279,
+          "pamela_score": 0.749262,
+          "pamela_rerank": true,
+          "semantic_score": 0.39753
+        },
+        {
+          "id": "d76725fabc46108e",
+          "source": "rijksmuseum",
+          "provider_rank": 10,
+          "width": 3810,
+          "height": 5484,
+          "pamela_score": 0.802945,
+          "pamela_rerank": true,
+          "semantic_score": 0.39202
+        },
+        {
+          "id": "dc7bb770e2f99d02",
+          "source": "commons",
+          "provider_rank": 1,
+          "width": 2818,
+          "height": 3873,
+          "pamela_score": 0.8283,
+          "pamela_rerank": true,
+          "semantic_score": 0.37279
+        },
+        {
+          "id": "6ecdfd55762b18ae",
+          "source": "rijksmuseum",
+          "provider_rank": 15,
+          "width": 4268,
+          "height": 6550,
+          "pamela_score": 0.774037,
+          "pamela_rerank": true,
+          "semantic_score": 0.41737
+        },
+        {
+          "id": "2920a6475e2375ac",
+          "source": "rijksmuseum",
+          "provider_rank": 12,
+          "width": 6531,
+          "height": 5134,
+          "pamela_score": 0.765326,
+          "pamela_rerank": true,
+          "semantic_score": 0.39988
+        },
+        {
+          "id": "1f06892f88991686",
+          "source": "mia",
+          "provider_rank": 5,
+          "width": 5896,
+          "height": 8953,
+          "pamela_score": 0.744965,
+          "pamela_rerank": true,
+          "semantic_score": 0.40022
+        },
+        {
+          "id": "5657296f04821757",
+          "source": "loc",
+          "provider_rank": 4,
+          "width": 4544,
+          "height": 5783,
+          "pamela_score": 0.772139,
+          "pamela_rerank": true,
+          "semantic_score": 0.36676
+        },
+        {
+          "id": "dcbe35be94e05ab3",
+          "source": "cleveland",
+          "provider_rank": 1,
+          "width": 3400,
+          "height": 2795,
+          "pamela_score": 0.812892,
+          "pamela_rerank": true,
+          "semantic_score": 0.39537
+        },
+        {
+          "id": "81acc5279ab72e69",
+          "source": "rijksmuseum",
+          "provider_rank": 1,
+          "width": 4062,
+          "height": 6146,
+          "pamela_score": 0.763112,
+          "pamela_rerank": true,
+          "semantic_score": 0.36479
+        },
+        {
+          "id": "01abfe3baab3cd41",
+          "source": "rijksmuseum",
+          "provider_rank": 3,
+          "width": 3424,
+          "height": 4500,
+          "pamela_score": 0.784672,
+          "pamela_rerank": true,
+          "semantic_score": 0.39665
+        },
+        {
+          "id": "61557182114576a4",
+          "source": "rijksmuseum",
+          "provider_rank": 6,
+          "width": 3940,
+          "height": 5794,
+          "pamela_score": 0.762644,
+          "pamela_rerank": true,
+          "semantic_score": 0.34283
+        },
+        {
+          "id": "322a5f1dcca076bf",
+          "source": "mia",
+          "provider_rank": 0,
+          "width": 2727,
+          "height": 3931,
+          "pamela_score": 0.797515,
+          "pamela_rerank": true,
+          "semantic_score": 0.38831
+        },
+        {
+          "id": "d3d38df68e8057de",
+          "source": "commons",
+          "provider_rank": 2,
+          "width": 2736,
+          "height": 3887,
+          "pamela_score": 0.797155,
+          "pamela_rerank": true,
+          "semantic_score": 0.38805
+        },
+        {
+          "id": "fc6b50bc9f9b7521",
+          "source": "mia",
+          "provider_rank": 9,
+          "width": 7149,
+          "height": 9575,
+          "pamela_score": 0.710069,
+          "pamela_rerank": true,
+          "semantic_score": 0.44525
+        },
+        {
+          "id": "8b08a88f9a1c55b9",
+          "source": "commons",
+          "provider_rank": 11,
+          "width": 3229,
+          "height": 4000,
+          "pamela_score": 0.772443,
+          "pamela_rerank": true,
+          "semantic_score": 0.37396
+        },
+        {
+          "id": "a00b275289dc2bd6",
+          "source": "wellcome",
+          "provider_rank": 5,
+          "width": 2244,
+          "height": 3370,
+          "pamela_score": 0.798494,
+          "pamela_rerank": true,
+          "semantic_score": 0.41569
+        },
+        {
+          "id": "5dd8558946f0ec4c",
+          "source": "commons",
+          "provider_rank": 14,
+          "width": 3456,
+          "height": 4000,
+          "pamela_score": 0.768145,
+          "pamela_rerank": true,
+          "semantic_score": 0.36523
+        },
+        {
+          "id": "0b5649b2a1e21518",
+          "source": "rijksmuseum",
+          "provider_rank": 2,
+          "width": 5064,
+          "height": 3712,
+          "pamela_score": 0.753633,
+          "pamela_rerank": true,
+          "semantic_score": 0.37965
+        },
+        {
+          "id": "0c2bda1955d29f4a",
+          "source": "commons",
+          "provider_rank": 16,
+          "width": 3855,
+          "height": 2874,
+          "pamela_score": 0.776587,
+          "pamela_rerank": true,
+          "semantic_score": 0.39569
+        },
+        {
+          "id": "00577558441997ef",
+          "source": "gnosis",
+          "provider_rank": 0,
+          "width": 2560,
+          "height": 3200,
+          "pamela_score": 0.787947,
+          "pamela_rerank": true,
+          "semantic_score": 0.45958
+        },
+        {
+          "id": "c7e8f5948e2f78a2",
+          "source": "mia",
+          "provider_rank": 6,
+          "width": 5292,
+          "height": 4060,
+          "pamela_score": 0.741579,
+          "pamela_rerank": true,
+          "semantic_score": 0.37376
+        },
+        {
+          "id": "d5e596109903acac",
+          "source": "rijksmuseum",
+          "provider_rank": 11,
+          "width": 2790,
+          "height": 4116,
+          "pamela_score": 0.768733,
+          "pamela_rerank": true,
+          "semantic_score": 0.38043
+        },
+        {
+          "id": "0adfe7b2ea08c64d",
+          "source": "rijksmuseum",
+          "provider_rank": 16,
+          "width": 2800,
+          "height": 3798,
+          "pamela_score": 0.769002,
+          "pamela_rerank": true,
+          "semantic_score": 0.41726
+        },
+        {
+          "id": "2d8cdfec72cef3b2",
+          "source": "commons",
+          "provider_rank": 12,
+          "width": 3937,
+          "height": 2540,
+          "pamela_score": 0.768806,
+          "pamela_rerank": true,
+          "semantic_score": 0.42122
+        },
+        {
+          "id": "5e6341de21eeef64",
+          "source": "cleveland",
+          "provider_rank": 2,
+          "width": 2522,
+          "height": 3400,
+          "pamela_score": 0.77044,
+          "pamela_rerank": true,
+          "semantic_score": 0.38268
+        },
+        {
+          "id": "339d3c23af633bf0",
+          "source": "wellcome",
+          "provider_rank": 2,
+          "width": 2425,
+          "height": 2965,
+          "pamela_score": 0.775918,
+          "pamela_rerank": true,
+          "semantic_score": 0.37829
+        },
+        {
+          "id": "8e357917b9663529",
+          "source": "vam",
+          "provider_rank": 6,
+          "width": 1711,
+          "height": 2500,
+          "pamela_score": 0.788996,
+          "pamela_rerank": true,
+          "semantic_score": 0.39535
+        },
+        {
+          "id": "a651560a0fe092b2",
+          "source": "vam",
+          "provider_rank": 5,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.782984,
+          "pamela_rerank": true,
+          "semantic_score": 0.39059
+        },
+        {
+          "id": "779a20a430e8e820",
+          "source": "vam",
+          "provider_rank": 4,
+          "width": 2500,
+          "height": 1870,
+          "pamela_score": 0.774759,
+          "pamela_rerank": true,
+          "semantic_score": 0.38126
+        },
+        {
+          "id": "79608b75da15686a",
+          "source": "commons",
+          "provider_rank": 15,
+          "width": 4000,
+          "height": 2358,
+          "pamela_score": 0.74053,
+          "pamela_rerank": true,
+          "semantic_score": 0.38017
+        },
+        {
+          "id": "034f54cabe72bc5b",
+          "source": "commons",
+          "provider_rank": 0,
+          "width": 1368,
+          "height": 1856,
+          "pamela_score": 0.805778,
+          "pamela_rerank": true,
+          "semantic_score": 0.3895
+        },
+        {
+          "id": "266be58721ae6bdc",
+          "source": "rijksmuseum",
+          "provider_rank": 13,
+          "width": 3564,
+          "height": 4952,
+          "pamela_score": 0.709951,
+          "pamela_rerank": true,
+          "semantic_score": 0.37154
+        },
+        {
+          "id": "3dd08bffad51eb66",
+          "source": "rijksmuseum",
+          "provider_rank": 0,
+          "width": 4516,
+          "height": 6504,
+          "pamela_score": 0.687383,
+          "pamela_rerank": true,
+          "semantic_score": 0.36126
+        },
+        {
+          "id": "7786981a04df95da",
+          "source": "rijksmuseum",
+          "provider_rank": 4,
+          "width": 3112,
+          "height": 6236,
+          "pamela_score": 0.69827,
+          "pamela_rerank": true,
+          "semantic_score": 0.38855
+        },
+        {
+          "id": "1c0ae57da79f9a9a",
+          "source": "rijksmuseum",
+          "provider_rank": 5,
+          "width": 4596,
+          "height": 6366,
+          "pamela_score": 0.680451,
+          "pamela_rerank": true,
+          "semantic_score": 0.42806
+        },
+        {
+          "id": "4d7c2e283e3d73fa",
+          "source": "mia",
+          "provider_rank": 7,
+          "width": 2533,
+          "height": 1863,
+          "pamela_score": 0.76096,
+          "pamela_rerank": true,
+          "semantic_score": 0.38472
+        },
+        {
+          "id": "1558c9b6ae965fe1",
+          "source": "vam",
+          "provider_rank": 0,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.759455,
+          "pamela_rerank": true,
+          "semantic_score": 0.36417
+        },
+        {
+          "id": "f8c25fc3af814593",
+          "source": "mia",
+          "provider_rank": 14,
+          "width": 2376,
+          "height": 5034,
+          "pamela_score": 0.710101,
+          "pamela_rerank": true,
+          "semantic_score": 0.39459
+        },
+        {
+          "id": "7c54c25c0635f8d6",
+          "source": "aic",
+          "provider_rank": 0,
+          "width": 3744,
+          "height": 4680,
+          "pamela_score": 0.689455,
+          "pamela_rerank": true,
+          "semantic_score": 0.404
+        },
+        {
+          "id": "c558521c3fe9158b",
+          "source": "vam",
+          "provider_rank": 2,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.742373,
+          "pamela_rerank": true,
+          "semantic_score": 0.40043
+        },
+        {
+          "id": "c377977b15381fe7",
+          "source": "commons",
+          "provider_rank": 3,
+          "width": 4000,
+          "height": 3002,
+          "pamela_score": 0.698041,
+          "pamela_rerank": true,
+          "semantic_score": 0.37343
+        },
+        {
+          "id": "96e2277c660ba74c",
+          "source": "vam",
+          "provider_rank": 3,
+          "width": 2500,
+          "height": 1487,
+          "pamela_score": 0.748014,
+          "pamela_rerank": true,
+          "semantic_score": 0.40391
+        },
+        {
+          "id": "fce445caa6fa52bc",
+          "source": "commons",
+          "provider_rank": 7,
+          "width": 1618,
+          "height": 1200,
+          "pamela_score": 0.775913,
+          "pamela_rerank": true,
+          "semantic_score": 0.37581
+        },
+        {
+          "id": "9f419098cfa5455b",
+          "source": "universal_comasonry",
+          "provider_rank": 0,
+          "width": 1135,
+          "height": 714,
+          "pamela_score": 0.82275,
+          "pamela_rerank": true,
+          "semantic_score": 0.43407
+        },
+        {
+          "id": "72880f16e4f43225",
+          "source": "gnosis",
+          "provider_rank": 2,
+          "width": 2208,
+          "height": 3420
+        },
+        {
+          "id": "440d336c742ee36a",
+          "source": "mia",
+          "provider_rank": 15,
+          "width": 2206,
+          "height": 2758,
+          "pamela_score": 0.69056,
+          "pamela_rerank": true,
+          "semantic_score": 0.37804
+        },
+        {
+          "id": "2ced5903afed3626",
+          "source": "vam",
+          "provider_rank": 1,
+          "width": 2500,
+          "height": 1433,
+          "pamela_score": 0.714412,
+          "pamela_rerank": true,
+          "semantic_score": 0.39486
+        },
+        {
+          "id": "5b2c7c1e57ac6aee",
+          "source": "harvard",
+          "provider_rank": 0,
+          "width": 868,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "75fd3fc0f9f6ba67",
+          "source": "rijksmuseum",
+          "provider_rank": 9,
+          "width": 5940,
+          "height": 3340,
+          "pamela_score": 0.638134,
+          "pamela_rerank": true,
+          "semantic_score": 0.41536
+        },
+        {
+          "id": "e6e163c7b922634e",
+          "source": "commons",
+          "provider_rank": 6,
+          "width": 1200,
+          "height": 1722,
+          "pamela_score": 0.721076,
+          "pamela_rerank": true,
+          "semantic_score": 0.39195
+        },
+        {
+          "id": "c4980da05214a26b",
+          "source": "harvard",
+          "provider_rank": 1,
+          "width": 711,
+          "height": 1024
+        },
+        {
+          "id": "6334849fe8b04f75",
+          "source": "europeana",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "c6c558c2e90063df",
+          "source": "vam",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f5244003ab4c8151",
+          "source": "loc",
+          "provider_rank": 5,
+          "width": 2982,
+          "height": 3413,
+          "pamela_score": 0.643211,
+          "pamela_rerank": true,
+          "semantic_score": 0.39098
+        },
+        {
+          "id": "3e5910a1983840f3",
+          "source": "vam",
+          "provider_rank": 11,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "a0b8928731966d45",
+          "source": "vam",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "7287210266c03fa8",
+          "source": "wellcome",
+          "provider_rank": 6,
+          "width": 3304,
+          "height": 2388,
+          "pamela_score": 0.650554,
+          "pamela_rerank": true,
+          "semantic_score": 0.41042
+        },
+        {
+          "id": "6f4a7bd57535d989",
+          "source": "vam",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "ad42f271b0fa63c8",
+          "source": "vam",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "5d8741cebec39499",
+          "source": "commons",
+          "provider_rank": 5,
+          "width": 1100,
+          "height": 1721,
+          "pamela_score": 0.705748,
+          "pamela_rerank": true,
+          "semantic_score": 0.3931
+        },
+        {
+          "id": "d37b871fac81b1b1",
+          "source": "commons",
+          "provider_rank": 13,
+          "width": 1463,
+          "height": 1870,
+          "pamela_score": 0.686944,
+          "pamela_rerank": true,
+          "semantic_score": 0.39746
+        },
+        {
+          "id": "94d97892a496f16e",
+          "source": "aic",
+          "provider_rank": 3,
+          "width": 1608,
+          "height": 2250
+        },
+        {
+          "id": "811811799f45adc9",
+          "source": "harvard",
+          "provider_rank": 3,
+          "width": 630,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "db4b4a71d4f156b6",
+          "source": "commons",
+          "provider_rank": 10,
+          "width": 1100,
+          "height": 1601,
+          "pamela_score": 0.700377,
+          "pamela_rerank": true,
+          "semantic_score": 0.43598
+        },
+        {
+          "id": "a4fcff9de1a7ab0f",
+          "source": "universal_comasonry",
+          "provider_rank": 1,
+          "width": 1135,
+          "height": 2174,
+          "pamela_score": 0.683082,
+          "pamela_rerank": true,
+          "semantic_score": 0.42171
+        },
+        {
+          "id": "7c7a1b278b056ed9",
+          "source": "vam",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2b76fc5cf1e10474",
+          "source": "cleveland",
+          "provider_rank": 4,
+          "width": 2475,
+          "height": 3400
+        },
+        {
+          "id": "f8ee1b125545b17e",
+          "source": "cleveland",
+          "provider_rank": 3,
+          "width": 2341,
+          "height": 3400
+        },
+        {
+          "id": "310f0da1953152a0",
+          "source": "vam",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0048432efdc3dc55",
+          "source": "cleveland",
+          "provider_rank": 7,
+          "width": 2293,
+          "height": 3400
+        },
+        {
+          "id": "2eefc41df70a49f8",
+          "source": "cleveland",
+          "provider_rank": 5,
+          "width": 2164,
+          "height": 3400
+        },
+        {
+          "id": "2caae0806a1d352a",
+          "source": "harvard",
+          "provider_rank": 5,
+          "width": 9174,
+          "height": 6309,
+          "pamela_rerank": true
+        },
+        {
+          "id": "efce766d2ca484bd",
+          "source": "harvard",
+          "provider_rank": 6,
+          "width": 841,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "7edd2e927283c414",
+          "source": "harvard",
+          "provider_rank": 7,
+          "width": 781,
+          "height": 1024
+        },
+        {
+          "id": "d81c5a511d588008",
+          "source": "cleveland",
+          "provider_rank": 11,
+          "width": 2396,
+          "height": 3400
+        },
+        {
+          "id": "44995c9acce25502",
+          "source": "vam",
+          "provider_rank": 8,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "eb5e8d8bbddaf8d3",
+          "source": "cleveland",
+          "provider_rank": 6,
+          "width": 3400,
+          "height": 2351
+        },
+        {
+          "id": "2896e6ef912040e0",
+          "source": "commons",
+          "provider_rank": 9,
+          "width": 1100,
+          "height": 1596,
+          "pamela_score": 0.68722,
+          "pamela_rerank": true,
+          "semantic_score": 0.44614
+        },
+        {
+          "id": "a4de5bd53692ae0e",
+          "source": "cleveland",
+          "provider_rank": 15,
+          "width": 2504,
+          "height": 3400
+        },
+        {
+          "id": "87c45fb7820df3fc",
+          "source": "cleveland",
+          "provider_rank": 8,
+          "width": 2395,
+          "height": 3400
+        },
+        {
+          "id": "557a632bfc816c12",
+          "source": "harvard",
+          "provider_rank": 8,
+          "width": 807,
+          "height": 1024
+        },
+        {
+          "id": "5284cc9d564531d0",
+          "source": "harvard",
+          "provider_rank": 9,
+          "width": 1950,
+          "height": 2550
+        },
+        {
+          "id": "95435aef2629db41",
+          "source": "loc",
+          "provider_rank": 6,
+          "width": 3986,
+          "height": 3193,
+          "pamela_score": 0.599843,
+          "pamela_rerank": true,
+          "semantic_score": 0.41954
+        },
+        {
+          "id": "d6211cea71ef178a",
+          "source": "cleveland",
+          "provider_rank": 13,
+          "width": 3400,
+          "height": 2282
+        },
+        {
+          "id": "6404f2e084db0af2",
+          "source": "cleveland",
+          "provider_rank": 10,
+          "width": 2802,
+          "height": 3400
+        },
+        {
+          "id": "a9ae6f517f432c1b",
+          "source": "harvard",
+          "provider_rank": 11,
+          "width": 675,
+          "height": 1024
+        },
+        {
+          "id": "4ce4939746f75a6c",
+          "source": "cleveland",
+          "provider_rank": 12,
+          "width": 1972,
+          "height": 3400
+        },
+        {
+          "id": "6899952af3f1be95",
+          "source": "harvard",
+          "provider_rank": 12,
+          "width": 1024,
+          "height": 725
+        },
+        {
+          "id": "261b0a9e1393e77a",
+          "source": "cleveland",
+          "provider_rank": 9,
+          "width": 3400,
+          "height": 2675
+        },
+        {
+          "id": "e8c2bfefa06f08bc",
+          "source": "harvard",
+          "provider_rank": 13,
+          "width": 710,
+          "height": 1024
+        },
+        {
+          "id": "4a048fa570e2fdb9",
+          "source": "cleveland",
+          "provider_rank": 14,
+          "width": 3400,
+          "height": 2621
+        },
+        {
+          "id": "d260ff00750189b6",
+          "source": "cleveland",
+          "provider_rank": 16,
+          "width": 3400,
+          "height": 2541
+        },
+        {
+          "id": "18ecfb6ce2701523",
+          "source": "harvard",
+          "provider_rank": 15,
+          "width": 737,
+          "height": 1024
+        },
+        {
+          "id": "0305627af76a7e1b",
+          "source": "harvard",
+          "provider_rank": 16,
+          "width": 717,
+          "height": 1024
+        },
+        {
+          "id": "22e681952e45e899",
+          "source": "wellcome",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "e58fae7b3887ccb3",
+          "source": "commons",
+          "provider_rank": 8,
+          "width": 1100,
+          "height": 1588,
+          "pamela_score": 0.661437,
+          "pamela_rerank": true,
+          "semantic_score": 0.40855
+        },
+        {
+          "id": "931e89bf4b6d5d77",
+          "source": "europeana",
+          "provider_rank": 6,
+          "width": 512,
+          "height": 376,
+          "pamela_score": 0.774075,
+          "pamela_rerank": true,
+          "semantic_score": 0.37953
+        },
+        {
+          "id": "ed5b7cecadcf1995",
+          "source": "commons",
+          "provider_rank": 4,
+          "width": 925,
+          "height": 644,
+          "pamela_score": 0.702538,
+          "pamela_rerank": true,
+          "semantic_score": 0.3683
+        },
+        {
+          "id": "0201e853fbaa99bd",
+          "source": "cleveland",
+          "provider_rank": 0,
+          "width": 2550,
+          "height": 3400,
+          "pamela_score": 0.577964,
+          "pamela_rerank": true,
+          "semantic_score": 0.45155
+        },
+        {
+          "id": "0542b9b2d82689e0",
+          "source": "wellcome",
+          "provider_rank": 0,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "41e512061f91715a",
+          "source": "europeana",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "6f110532f3b18a3b",
+          "source": "europeana",
+          "provider_rank": 15,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "eaaec5dcbf99fe3c",
+          "source": "europeana",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "876ddf8da3a5b370",
+          "source": "europeana",
+          "provider_rank": 17,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "69d95118cba4cfd7",
+          "source": "europeana",
+          "provider_rank": 18,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "d09dce8384025b22",
+          "source": "europeana",
+          "provider_rank": 19,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "58cfbe917de4fc7c",
+          "source": "europeana",
+          "provider_rank": 20,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "ff7bd92867f752fe",
+          "source": "europeana",
+          "provider_rank": 21,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "4228c6ffadecef37",
+          "source": "europeana",
+          "provider_rank": 22,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "8b18e5fe624931c3",
+          "source": "europeana",
+          "provider_rank": 23,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "fa77baf7958188e6",
+          "source": "europeana",
+          "provider_rank": 24,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0cf0e52f8bb798fe",
+          "source": "europeana",
+          "provider_rank": 25,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "64d24b428b8de955",
+          "source": "europeana",
+          "provider_rank": 26,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "90d41720d0fbd482",
+          "source": "aic",
+          "provider_rank": 1,
+          "width": 1173,
+          "height": 2250
+        },
+        {
+          "id": "dbe6ad64119d254c",
+          "source": "harvard",
+          "provider_rank": 2,
+          "width": 611,
+          "height": 1024
+        },
+        {
+          "id": "dbe7935d8713b052",
+          "source": "aic",
+          "provider_rank": 2,
+          "width": 5428,
+          "height": 7230
+        },
+        {
+          "id": "e3dbbebaa40eff7f",
+          "source": "wellcome",
+          "provider_rank": 4,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "f3476b4951e81e9f",
+          "source": "harvard",
+          "provider_rank": 4,
+          "width": 772,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "3415994077449c7f",
+          "source": "aic",
+          "provider_rank": 4,
+          "width": 3000,
+          "height": 2570
+        },
+        {
+          "id": "949c6c3770672db1",
+          "source": "wellcome",
+          "provider_rank": 7,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "df55750492d13836",
+          "source": "loc",
+          "provider_rank": 7,
+          "width": 3995,
+          "height": 3265
+        },
+        {
+          "id": "fdcc8ffdb08a8676",
+          "source": "europeana",
+          "provider_rank": 8,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "4ddbca1ce2846eb6",
+          "source": "loc",
+          "provider_rank": 8,
+          "width": 4036,
+          "height": 3192
+        },
+        {
+          "id": "7d69ec225d8fbc09",
+          "source": "aic",
+          "provider_rank": 5,
+          "width": 9610,
+          "height": 7362
+        },
+        {
+          "id": "4d87811ffa00ee3f",
+          "source": "loc",
+          "provider_rank": 9,
+          "width": 3160,
+          "height": 3949
+        },
+        {
+          "id": "1be02a191967f69f",
+          "source": "wellcome",
+          "provider_rank": 8,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "75a01d5108f407a4",
+          "source": "loc",
+          "provider_rank": 10,
+          "width": 3997,
+          "height": 3176
+        },
+        {
+          "id": "0d8327bda2d39139",
+          "source": "loc",
+          "provider_rank": 11,
+          "width": 3248,
+          "height": 3992
+        },
+        {
+          "id": "017ab3ae469e9a1a",
+          "source": "wellcome",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "739aab1bde739130",
+          "source": "loc",
+          "provider_rank": 12,
+          "width": 3182,
+          "height": 3971
+        },
+        {
+          "id": "5d2721470d0e03fe",
+          "source": "aic",
+          "provider_rank": 6,
+          "width": 2580,
+          "height": 3000
+        },
+        {
+          "id": "9bad488b69fef25f",
+          "source": "loc",
+          "provider_rank": 13,
+          "width": 3999,
+          "height": 3216
+        },
+        {
+          "id": "16d8fb5593bb2fbd",
+          "source": "wellcome",
+          "provider_rank": 11,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "50036331a4a042c5",
+          "source": "wellcome",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "41defc47feab8f27",
+          "source": "wellcome",
+          "provider_rank": 12,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "97e23d53db205e2d",
+          "source": "harvard",
+          "provider_rank": 10,
+          "width": 1024,
+          "height": 914
+        },
+        {
+          "id": "e00af9e0fe36a4b4",
+          "source": "wellcome",
+          "provider_rank": 14,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0134311226f7141c",
+          "source": "wellcome",
+          "provider_rank": 13,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "7689749b9d6e2fbc",
+          "source": "loc",
+          "provider_rank": 3,
+          "width": 1024,
+          "height": 696,
+          "pamela_score": 0.549226,
+          "pamela_rerank": true,
+          "semantic_score": 0.39985
+        },
+        {
+          "id": "909e352918ec62f0",
+          "source": "wellcome",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f783ce2b3685ed36",
+          "source": "harvard",
+          "provider_rank": 14,
+          "width": 7298,
+          "height": 5607
+        },
+        {
+          "id": "77d7598bf781ff81",
+          "source": "loc",
+          "provider_rank": 14,
+          "width": 1024,
+          "height": 683
+        },
+        {
+          "id": "2512b09eb09077d9",
+          "source": "rijksmuseum",
+          "provider_rank": 7,
+          "width": 2262,
+          "height": 3538,
+          "pamela_score": 0.484845,
+          "pamela_rerank": true,
+          "semantic_score": 0.43495
+        },
+        {
+          "id": "810d3f8a83eca7cf",
+          "source": "loc",
+          "provider_rank": 16,
+          "width": 1024,
+          "height": 683
+        },
+        {
+          "id": "7b77cd6d5e6cf435",
+          "source": "gnosis",
+          "provider_rank": 1,
+          "width": 2521,
+          "height": 3200
+        },
+        {
+          "id": "b29b942a1b0c1067",
+          "source": "mia",
+          "provider_rank": 17,
+          "width": 1678,
+          "height": 2098
+        },
+        {
+          "id": "176a96e8c18a39a0",
+          "source": "mia",
+          "provider_rank": 18,
+          "width": 2317,
+          "height": 3244
+        },
+        {
+          "id": "3d43f43a55c0957e",
+          "source": "mia",
+          "provider_rank": 19,
+          "width": 2879,
+          "height": 4030
+        },
+        {
+          "id": "9a6975f02b2af0f0",
+          "source": "mia",
+          "provider_rank": 20,
+          "width": 2628,
+          "height": 3679
+        },
+        {
+          "id": "90d24d6530f9e66b",
+          "source": "mia",
+          "provider_rank": 23,
+          "width": 1936,
+          "height": 2592
+        },
+        {
+          "id": "dbaa2c8ced1ac952",
+          "source": "mia",
+          "provider_rank": 24,
+          "width": 2314,
+          "height": 3240
+        },
+        {
+          "id": "011228009ef20ac2",
+          "source": "mia",
+          "provider_rank": 25,
+          "width": 3224,
+          "height": 4030
+        },
+        {
+          "id": "4d6919305aaba644",
+          "source": "mia",
+          "provider_rank": 26,
+          "width": 2472,
+          "height": 3461
+        },
+        {
+          "id": "a9f74d28da9642d8",
+          "source": "wellcome",
+          "provider_rank": 1,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.704952,
+          "pamela_rerank": true,
+          "semantic_score": 0.41326
+        },
+        {
+          "id": "8d5fdcb745d94822",
+          "source": "wellcome",
+          "provider_rank": 3,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.71067,
+          "pamela_rerank": true,
+          "semantic_score": 0.39449
+        }
+      ]
+    },
+    {
+      "revision": 89,
+      "policy": {
+        "gnosis": {
+          "continue": true,
+          "selected": true,
+          "reason": "progressive preview batch complete",
+          "fetched": 7,
+          "top_50_hits": 0,
+          "rounds": 3
+        },
+        "universal_comasonry": {
+          "continue": false,
+          "selected": true,
+          "reason": "source exhausted",
+          "fetched": 2,
+          "top_50_hits": 0,
+          "rounds": 2
+        },
+        "cleveland": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "met": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "rijksmuseum": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 27,
+          "top_50_hits": 0,
+          "rounds": 5
+        },
+        "aic": {
+          "continue": false,
+          "selected": true,
+          "reason": "source exhausted",
+          "fetched": 13,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "getty": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "nga": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "harvard": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "yale": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "paris_musees": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "mia": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 27,
+          "top_50_hits": 0,
+          "rounds": 5
+        },
+        "loc": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 17,
+          "top_50_hits": 0,
+          "rounds": 4
+        },
+        "smk": {
+          "continue": false,
+          "selected": true,
+          "reason": "no results (cached)",
+          "fetched": 0,
+          "top_50_hits": 0,
+          "rounds": 1
+        },
+        "wellcome": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 27,
+          "top_50_hits": 0,
+          "rounds": 5
+        },
+        "vam": {
+          "continue": true,
+          "selected": true,
+          "reason": "1 of latest 10 rank in aggregate top 50",
+          "fetched": 27,
+          "top_50_hits": 1,
+          "rounds": 5
+        },
+        "commons": {
+          "continue": true,
+          "selected": true,
+          "reason": "5 of latest 10 rank in aggregate top 50",
+          "fetched": 17,
+          "top_50_hits": 5,
+          "rounds": 4
+        },
+        "europeana": {
+          "continue": false,
+          "selected": true,
+          "reason": "latest batch produced no aggregate top-50 result",
+          "fetched": 27,
+          "top_50_hits": 0,
+          "rounds": 5
+        }
+      },
+      "results": [
+        {
+          "id": "5069b8f8aec511b3",
+          "source": "mia",
+          "provider_rank": 1,
+          "width": 10000,
+          "height": 7103,
+          "pamela_score": 0.853429,
+          "pamela_rerank": true,
+          "semantic_score": 0.3833
+        },
+        {
+          "id": "32253732e3675ed1",
+          "source": "mia",
+          "provider_rank": 11,
+          "width": 9537,
+          "height": 12060,
+          "pamela_score": 0.805538,
+          "pamela_rerank": true,
+          "semantic_score": 0.34618
+        },
+        {
+          "id": "58cfcbf639cab5b0",
+          "source": "mia",
+          "provider_rank": 10,
+          "width": 6109,
+          "height": 8273,
+          "pamela_score": 0.82124,
+          "pamela_rerank": true,
+          "semantic_score": 0.40176
+        },
+        {
+          "id": "103f0dbd8c70d861",
+          "source": "mia",
+          "provider_rank": 12,
+          "width": 5792,
+          "height": 8833,
+          "pamela_score": 0.820618,
+          "pamela_rerank": true,
+          "semantic_score": 0.3753
+        },
+        {
+          "id": "fecafe94dbc8240d",
+          "source": "mia",
+          "provider_rank": 8,
+          "width": 5936,
+          "height": 8952,
+          "pamela_score": 0.794612,
+          "pamela_rerank": true,
+          "semantic_score": 0.39305
+        },
+        {
+          "id": "d276d08e015776c5",
+          "source": "mia",
+          "provider_rank": 13,
+          "width": 5492,
+          "height": 3535,
+          "pamela_score": 0.840691,
+          "pamela_rerank": true,
+          "semantic_score": 0.36313
+        },
+        {
+          "id": "002e326adbdf9ec7",
+          "source": "mia",
+          "provider_rank": 2,
+          "width": 7584,
+          "height": 9481,
+          "pamela_score": 0.758228,
+          "pamela_rerank": true,
+          "semantic_score": 0.38906
+        },
+        {
+          "id": "bc467120af1f51a4",
+          "source": "mia",
+          "provider_rank": 3,
+          "width": 4316,
+          "height": 6761,
+          "pamela_score": 0.79608,
+          "pamela_rerank": true,
+          "semantic_score": 0.39324
+        },
+        {
+          "id": "1f359ae7d76474c6",
+          "source": "rijksmuseum",
+          "provider_rank": 14,
+          "width": 4254,
+          "height": 5472,
+          "pamela_score": 0.805521,
+          "pamela_rerank": true,
+          "semantic_score": 0.38267
+        },
+        {
+          "id": "61f604687c30ef14",
+          "source": "mia",
+          "provider_rank": 16,
+          "width": 6572,
+          "height": 10044,
+          "pamela_score": 0.756815,
+          "pamela_rerank": true,
+          "semantic_score": 0.38776
+        },
+        {
+          "id": "617130b4f2f4d01e",
+          "source": "mia",
+          "provider_rank": 4,
+          "width": 7693,
+          "height": 10279,
+          "pamela_score": 0.749262,
+          "pamela_rerank": true,
+          "semantic_score": 0.39753
+        },
+        {
+          "id": "d76725fabc46108e",
+          "source": "rijksmuseum",
+          "provider_rank": 10,
+          "width": 3810,
+          "height": 5484,
+          "pamela_score": 0.802945,
+          "pamela_rerank": true,
+          "semantic_score": 0.39202
+        },
+        {
+          "id": "dc7bb770e2f99d02",
+          "source": "commons",
+          "provider_rank": 1,
+          "width": 2818,
+          "height": 3873,
+          "pamela_score": 0.8283,
+          "pamela_rerank": true,
+          "semantic_score": 0.37279
+        },
+        {
+          "id": "eb5e8d8bbddaf8d3",
+          "source": "cleveland",
+          "provider_rank": 6,
+          "width": 3400,
+          "height": 2351,
+          "pamela_score": 0.841503,
+          "pamela_rerank": true,
+          "semantic_score": 0.39152
+        },
+        {
+          "id": "6ecdfd55762b18ae",
+          "source": "rijksmuseum",
+          "provider_rank": 15,
+          "width": 4268,
+          "height": 6550,
+          "pamela_score": 0.774037,
+          "pamela_rerank": true,
+          "semantic_score": 0.41737
+        },
+        {
+          "id": "2920a6475e2375ac",
+          "source": "rijksmuseum",
+          "provider_rank": 12,
+          "width": 6531,
+          "height": 5134,
+          "pamela_score": 0.765326,
+          "pamela_rerank": true,
+          "semantic_score": 0.39988
+        },
+        {
+          "id": "1f06892f88991686",
+          "source": "mia",
+          "provider_rank": 5,
+          "width": 5896,
+          "height": 8953,
+          "pamela_score": 0.744965,
+          "pamela_rerank": true,
+          "semantic_score": 0.40022
+        },
+        {
+          "id": "1be02a191967f69f",
+          "source": "wellcome",
+          "provider_rank": 8,
+          "width": 2346,
+          "height": 3174,
+          "pamela_score": 0.834218,
+          "pamela_rerank": true,
+          "semantic_score": 0.36585
+        },
+        {
+          "id": "5657296f04821757",
+          "source": "loc",
+          "provider_rank": 4,
+          "width": 4544,
+          "height": 5783,
+          "pamela_score": 0.772139,
+          "pamela_rerank": true,
+          "semantic_score": 0.36676
+        },
+        {
+          "id": "dcbe35be94e05ab3",
+          "source": "cleveland",
+          "provider_rank": 1,
+          "width": 3400,
+          "height": 2795,
+          "pamela_score": 0.812892,
+          "pamela_rerank": true,
+          "semantic_score": 0.39537
+        },
+        {
+          "id": "0134311226f7141c",
+          "source": "wellcome",
+          "provider_rank": 13,
+          "width": 2400,
+          "height": 3234,
+          "pamela_score": 0.820911,
+          "pamela_rerank": true,
+          "semantic_score": 0.41199
+        },
+        {
+          "id": "81acc5279ab72e69",
+          "source": "rijksmuseum",
+          "provider_rank": 1,
+          "width": 4062,
+          "height": 6146,
+          "pamela_score": 0.763112,
+          "pamela_rerank": true,
+          "semantic_score": 0.36479
+        },
+        {
+          "id": "01abfe3baab3cd41",
+          "source": "rijksmuseum",
+          "provider_rank": 3,
+          "width": 3424,
+          "height": 4500,
+          "pamela_score": 0.784672,
+          "pamela_rerank": true,
+          "semantic_score": 0.39665
+        },
+        {
+          "id": "61557182114576a4",
+          "source": "rijksmuseum",
+          "provider_rank": 6,
+          "width": 3940,
+          "height": 5794,
+          "pamela_score": 0.762644,
+          "pamela_rerank": true,
+          "semantic_score": 0.34283
+        },
+        {
+          "id": "322a5f1dcca076bf",
+          "source": "mia",
+          "provider_rank": 0,
+          "width": 2727,
+          "height": 3931,
+          "pamela_score": 0.797515,
+          "pamela_rerank": true,
+          "semantic_score": 0.38831
+        },
+        {
+          "id": "d3d38df68e8057de",
+          "source": "commons",
+          "provider_rank": 2,
+          "width": 2736,
+          "height": 3887,
+          "pamela_score": 0.797155,
+          "pamela_rerank": true,
+          "semantic_score": 0.38805
+        },
+        {
+          "id": "fc6b50bc9f9b7521",
+          "source": "mia",
+          "provider_rank": 9,
+          "width": 7149,
+          "height": 9575,
+          "pamela_score": 0.710069,
+          "pamela_rerank": true,
+          "semantic_score": 0.44525
+        },
+        {
+          "id": "2b76fc5cf1e10474",
+          "source": "cleveland",
+          "provider_rank": 4,
+          "width": 2475,
+          "height": 3400,
+          "pamela_score": 0.801789,
+          "pamela_rerank": true,
+          "semantic_score": 0.37889
+        },
+        {
+          "id": "72880f16e4f43225",
+          "source": "gnosis",
+          "provider_rank": 2,
+          "width": 2208,
+          "height": 3420,
+          "pamela_score": 0.806453,
+          "pamela_rerank": true,
+          "semantic_score": 0.41875
+        },
+        {
+          "id": "8b08a88f9a1c55b9",
+          "source": "commons",
+          "provider_rank": 11,
+          "width": 3229,
+          "height": 4000,
+          "pamela_score": 0.772443,
+          "pamela_rerank": true,
+          "semantic_score": 0.37396
+        },
+        {
+          "id": "a00b275289dc2bd6",
+          "source": "wellcome",
+          "provider_rank": 5,
+          "width": 2244,
+          "height": 3370,
+          "pamela_score": 0.798494,
+          "pamela_rerank": true,
+          "semantic_score": 0.41569
+        },
+        {
+          "id": "5dd8558946f0ec4c",
+          "source": "commons",
+          "provider_rank": 14,
+          "width": 3456,
+          "height": 4000,
+          "pamela_score": 0.768145,
+          "pamela_rerank": true,
+          "semantic_score": 0.36523
+        },
+        {
+          "id": "0b5649b2a1e21518",
+          "source": "rijksmuseum",
+          "provider_rank": 2,
+          "width": 5064,
+          "height": 3712,
+          "pamela_score": 0.753633,
+          "pamela_rerank": true,
+          "semantic_score": 0.37965
+        },
+        {
+          "id": "0c2bda1955d29f4a",
+          "source": "commons",
+          "provider_rank": 16,
+          "width": 3855,
+          "height": 2874,
+          "pamela_score": 0.776587,
+          "pamela_rerank": true,
+          "semantic_score": 0.39569
+        },
+        {
+          "id": "00577558441997ef",
+          "source": "gnosis",
+          "provider_rank": 0,
+          "width": 2560,
+          "height": 3200,
+          "pamela_score": 0.787947,
+          "pamela_rerank": true,
+          "semantic_score": 0.45958
+        },
+        {
+          "id": "c7e8f5948e2f78a2",
+          "source": "mia",
+          "provider_rank": 6,
+          "width": 5292,
+          "height": 4060,
+          "pamela_score": 0.741579,
+          "pamela_rerank": true,
+          "semantic_score": 0.37376
+        },
+        {
+          "id": "d5e596109903acac",
+          "source": "rijksmuseum",
+          "provider_rank": 11,
+          "width": 2790,
+          "height": 4116,
+          "pamela_score": 0.768733,
+          "pamela_rerank": true,
+          "semantic_score": 0.38043
+        },
+        {
+          "id": "6f4a7bd57535d989",
+          "source": "vam",
+          "provider_rank": 15,
+          "width": 2500,
+          "height": 1909,
+          "pamela_score": 0.811248,
+          "pamela_rerank": true,
+          "semantic_score": 0.38567
+        },
+        {
+          "id": "0adfe7b2ea08c64d",
+          "source": "rijksmuseum",
+          "provider_rank": 16,
+          "width": 2800,
+          "height": 3798,
+          "pamela_score": 0.769002,
+          "pamela_rerank": true,
+          "semantic_score": 0.41726
+        },
+        {
+          "id": "310f0da1953152a0",
+          "source": "vam",
+          "provider_rank": 10,
+          "width": 1862,
+          "height": 2500,
+          "pamela_score": 0.808694,
+          "pamela_rerank": true,
+          "semantic_score": 0.38318
+        },
+        {
+          "id": "2d8cdfec72cef3b2",
+          "source": "commons",
+          "provider_rank": 12,
+          "width": 3937,
+          "height": 2540,
+          "pamela_score": 0.768806,
+          "pamela_rerank": true,
+          "semantic_score": 0.42122
+        },
+        {
+          "id": "dbe7935d8713b052",
+          "source": "aic",
+          "provider_rank": 2,
+          "width": 5428,
+          "height": 7230,
+          "pamela_score": 0.705207,
+          "pamela_rerank": true,
+          "semantic_score": 0.39473
+        },
+        {
+          "id": "ad42f271b0fa63c8",
+          "source": "vam",
+          "provider_rank": 16,
+          "width": 1893,
+          "height": 2500,
+          "pamela_score": 0.800769,
+          "pamela_rerank": true,
+          "semantic_score": 0.40577
+        },
+        {
+          "id": "5e6341de21eeef64",
+          "source": "cleveland",
+          "provider_rank": 2,
+          "width": 2522,
+          "height": 3400,
+          "pamela_score": 0.77044,
+          "pamela_rerank": true,
+          "semantic_score": 0.38268
+        },
+        {
+          "id": "339d3c23af633bf0",
+          "source": "wellcome",
+          "provider_rank": 2,
+          "width": 2425,
+          "height": 2965,
+          "pamela_score": 0.775918,
+          "pamela_rerank": true,
+          "semantic_score": 0.37829
+        },
+        {
+          "id": "22e681952e45e899",
+          "source": "wellcome",
+          "provider_rank": 15,
+          "width": 2371,
+          "height": 3223,
+          "pamela_score": 0.768658,
+          "pamela_rerank": true,
+          "semantic_score": 0.41068
+        },
+        {
+          "id": "aa3f043ed1df7220",
+          "source": "vam",
+          "provider_rank": 14,
+          "width": 1772,
+          "height": 2500,
+          "pamela_score": 0.76005,
+          "pamela_rerank": true,
+          "semantic_score": 0.38172
+        },
+        {
+          "id": "a651560a0fe092b2",
+          "source": "vam",
+          "provider_rank": 5,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.782984,
+          "pamela_rerank": true,
+          "semantic_score": 0.39059
+        },
+        {
+          "id": "779a20a430e8e820",
+          "source": "vam",
+          "provider_rank": 4,
+          "width": 2500,
+          "height": 1870,
+          "pamela_score": 0.774759,
+          "pamela_rerank": true,
+          "semantic_score": 0.38126
+        },
+        {
+          "id": "79608b75da15686a",
+          "source": "commons",
+          "provider_rank": 15,
+          "width": 4000,
+          "height": 2358,
+          "pamela_score": 0.74053,
+          "pamela_rerank": true,
+          "semantic_score": 0.38017
+        },
+        {
+          "id": "034f54cabe72bc5b",
+          "source": "commons",
+          "provider_rank": 0,
+          "width": 1368,
+          "height": 1856,
+          "pamela_score": 0.805778,
+          "pamela_rerank": true,
+          "semantic_score": 0.3895
+        },
+        {
+          "id": "7c7a1b278b056ed9",
+          "source": "vam",
+          "provider_rank": 7,
+          "width": 1951,
+          "height": 2500,
+          "pamela_score": 0.770592,
+          "pamela_rerank": true,
+          "semantic_score": 0.37927
+        },
+        {
+          "id": "2eefc41df70a49f8",
+          "source": "cleveland",
+          "provider_rank": 5,
+          "width": 2164,
+          "height": 3400,
+          "pamela_score": 0.749796,
+          "pamela_rerank": true,
+          "semantic_score": 0.41272
+        },
+        {
+          "id": "266be58721ae6bdc",
+          "source": "rijksmuseum",
+          "provider_rank": 13,
+          "width": 3564,
+          "height": 4952,
+          "pamela_score": 0.709951,
+          "pamela_rerank": true,
+          "semantic_score": 0.37154
+        },
+        {
+          "id": "3dd08bffad51eb66",
+          "source": "rijksmuseum",
+          "provider_rank": 0,
+          "width": 4516,
+          "height": 6504,
+          "pamela_score": 0.687383,
+          "pamela_rerank": true,
+          "semantic_score": 0.36126
+        },
+        {
+          "id": "44995c9acce25502",
+          "source": "vam",
+          "provider_rank": 8,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.763511,
+          "pamela_rerank": true,
+          "semantic_score": 0.35845
+        },
+        {
+          "id": "7786981a04df95da",
+          "source": "rijksmuseum",
+          "provider_rank": 4,
+          "width": 3112,
+          "height": 6236,
+          "pamela_score": 0.69827,
+          "pamela_rerank": true,
+          "semantic_score": 0.38855
+        },
+        {
+          "id": "1c0ae57da79f9a9a",
+          "source": "rijksmuseum",
+          "provider_rank": 5,
+          "width": 4596,
+          "height": 6366,
+          "pamela_score": 0.680451,
+          "pamela_rerank": true,
+          "semantic_score": 0.42806
+        },
+        {
+          "id": "4d7c2e283e3d73fa",
+          "source": "mia",
+          "provider_rank": 7,
+          "width": 2533,
+          "height": 1863,
+          "pamela_score": 0.76096,
+          "pamela_rerank": true,
+          "semantic_score": 0.38472
+        },
+        {
+          "id": "0e6fa769fde256f0",
+          "source": "gnosis",
+          "provider_rank": 3,
+          "width": 3336,
+          "height": 4233
+        },
+        {
+          "id": "1558c9b6ae965fe1",
+          "source": "vam",
+          "provider_rank": 0,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.759455,
+          "pamela_rerank": true,
+          "semantic_score": 0.36417
+        },
+        {
+          "id": "f8c25fc3af814593",
+          "source": "mia",
+          "provider_rank": 14,
+          "width": 2376,
+          "height": 5034,
+          "pamela_score": 0.710101,
+          "pamela_rerank": true,
+          "semantic_score": 0.39459
+        },
+        {
+          "id": "7c54c25c0635f8d6",
+          "source": "aic",
+          "provider_rank": 0,
+          "width": 3744,
+          "height": 4680,
+          "pamela_score": 0.689455,
+          "pamela_rerank": true,
+          "semantic_score": 0.404
+        },
+        {
+          "id": "3e5910a1983840f3",
+          "source": "vam",
+          "provider_rank": 11,
+          "width": 2500,
+          "height": 1729,
+          "pamela_score": 0.749986,
+          "pamela_rerank": true,
+          "semantic_score": 0.3848
+        },
+        {
+          "id": "c558521c3fe9158b",
+          "source": "vam",
+          "provider_rank": 2,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.742373,
+          "pamela_rerank": true,
+          "semantic_score": 0.40043
+        },
+        {
+          "id": "c377977b15381fe7",
+          "source": "commons",
+          "provider_rank": 3,
+          "width": 4000,
+          "height": 3002,
+          "pamela_score": 0.698041,
+          "pamela_rerank": true,
+          "semantic_score": 0.37343
+        },
+        {
+          "id": "96e2277c660ba74c",
+          "source": "vam",
+          "provider_rank": 3,
+          "width": 2500,
+          "height": 1487,
+          "pamela_score": 0.748014,
+          "pamela_rerank": true,
+          "semantic_score": 0.40391
+        },
+        {
+          "id": "fce445caa6fa52bc",
+          "source": "commons",
+          "provider_rank": 7,
+          "width": 1618,
+          "height": 1200,
+          "pamela_score": 0.775913,
+          "pamela_rerank": true,
+          "semantic_score": 0.37581
+        },
+        {
+          "id": "9f419098cfa5455b",
+          "source": "universal_comasonry",
+          "provider_rank": 0,
+          "width": 1135,
+          "height": 714,
+          "pamela_score": 0.82275,
+          "pamela_rerank": true,
+          "semantic_score": 0.43407
+        },
+        {
+          "id": "440d336c742ee36a",
+          "source": "mia",
+          "provider_rank": 15,
+          "width": 2206,
+          "height": 2758,
+          "pamela_score": 0.69056,
+          "pamela_rerank": true,
+          "semantic_score": 0.37804
+        },
+        {
+          "id": "2ced5903afed3626",
+          "source": "vam",
+          "provider_rank": 1,
+          "width": 2500,
+          "height": 1433,
+          "pamela_score": 0.714412,
+          "pamela_rerank": true,
+          "semantic_score": 0.39486
+        },
+        {
+          "id": "5b2c7c1e57ac6aee",
+          "source": "harvard",
+          "provider_rank": 0,
+          "width": 868,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "75fd3fc0f9f6ba67",
+          "source": "rijksmuseum",
+          "provider_rank": 9,
+          "width": 5940,
+          "height": 3340,
+          "pamela_score": 0.638134,
+          "pamela_rerank": true,
+          "semantic_score": 0.41536
+        },
+        {
+          "id": "6334849fe8b04f75",
+          "source": "europeana",
+          "provider_rank": 13,
+          "width": 512,
+          "height": 763,
+          "pamela_score": 0.821869,
+          "pamela_rerank": true,
+          "semantic_score": 0.41102
+        },
+        {
+          "id": "e6e163c7b922634e",
+          "source": "commons",
+          "provider_rank": 6,
+          "width": 1200,
+          "height": 1722,
+          "pamela_score": 0.721076,
+          "pamela_rerank": true,
+          "semantic_score": 0.39195
+        },
+        {
+          "id": "c4980da05214a26b",
+          "source": "harvard",
+          "provider_rank": 1,
+          "width": 711,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "f5244003ab4c8151",
+          "source": "loc",
+          "provider_rank": 5,
+          "width": 2982,
+          "height": 3413,
+          "pamela_score": 0.643211,
+          "pamela_rerank": true,
+          "semantic_score": 0.39098
+        },
+        {
+          "id": "7287210266c03fa8",
+          "source": "wellcome",
+          "provider_rank": 6,
+          "width": 3304,
+          "height": 2388,
+          "pamela_score": 0.650554,
+          "pamela_rerank": true,
+          "semantic_score": 0.41042
+        },
+        {
+          "id": "90d41720d0fbd482",
+          "source": "aic",
+          "provider_rank": 1,
+          "width": 1173,
+          "height": 2250,
+          "pamela_score": 0.696055,
+          "pamela_rerank": true,
+          "semantic_score": 0.40427
+        },
+        {
+          "id": "3a9c8924653fd02e",
+          "source": "vam",
+          "provider_rank": 20,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "e359a54e1e97ecfb",
+          "source": "vam",
+          "provider_rank": 21,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "44fd6c4e7897772c",
+          "source": "vam",
+          "provider_rank": 24,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2dfe57182ba38d3e",
+          "source": "gnosis",
+          "provider_rank": 5,
+          "width": 2802,
+          "height": 3400
+        },
+        {
+          "id": "5d8741cebec39499",
+          "source": "commons",
+          "provider_rank": 5,
+          "width": 1100,
+          "height": 1721,
+          "pamela_score": 0.705748,
+          "pamela_rerank": true,
+          "semantic_score": 0.3931
+        },
+        {
+          "id": "41e512061f91715a",
+          "source": "europeana",
+          "provider_rank": 7,
+          "width": 512,
+          "height": 765,
+          "pamela_score": 0.791228,
+          "pamela_rerank": true,
+          "semantic_score": 0.39453
+        },
+        {
+          "id": "d37b871fac81b1b1",
+          "source": "commons",
+          "provider_rank": 13,
+          "width": 1463,
+          "height": 1870,
+          "pamela_score": 0.686944,
+          "pamela_rerank": true,
+          "semantic_score": 0.39746
+        },
+        {
+          "id": "94d97892a496f16e",
+          "source": "aic",
+          "provider_rank": 3,
+          "width": 1608,
+          "height": 2250
+        },
+        {
+          "id": "811811799f45adc9",
+          "source": "harvard",
+          "provider_rank": 3,
+          "width": 630,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "db4b4a71d4f156b6",
+          "source": "commons",
+          "provider_rank": 10,
+          "width": 1100,
+          "height": 1601,
+          "pamela_score": 0.700377,
+          "pamela_rerank": true,
+          "semantic_score": 0.43598
+        },
+        {
+          "id": "a4fcff9de1a7ab0f",
+          "source": "universal_comasonry",
+          "provider_rank": 1,
+          "width": 1135,
+          "height": 2174,
+          "pamela_score": 0.683082,
+          "pamela_rerank": true,
+          "semantic_score": 0.42171
+        },
+        {
+          "id": "76f9306c3346afcf",
+          "source": "gnosis",
+          "provider_rank": 6,
+          "width": 3200,
+          "height": 2192
+        },
+        {
+          "id": "0048432efdc3dc55",
+          "source": "cleveland",
+          "provider_rank": 7,
+          "width": 2293,
+          "height": 3400
+        },
+        {
+          "id": "2caae0806a1d352a",
+          "source": "harvard",
+          "provider_rank": 5,
+          "width": 9174,
+          "height": 6309,
+          "pamela_rerank": true
+        },
+        {
+          "id": "efce766d2ca484bd",
+          "source": "harvard",
+          "provider_rank": 6,
+          "width": 841,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "7edd2e927283c414",
+          "source": "harvard",
+          "provider_rank": 7,
+          "width": 781,
+          "height": 1024
+        },
+        {
+          "id": "d81c5a511d588008",
+          "source": "cleveland",
+          "provider_rank": 11,
+          "width": 2396,
+          "height": 3400
+        },
+        {
+          "id": "2896e6ef912040e0",
+          "source": "commons",
+          "provider_rank": 9,
+          "width": 1100,
+          "height": 1596,
+          "pamela_score": 0.68722,
+          "pamela_rerank": true,
+          "semantic_score": 0.44614
+        },
+        {
+          "id": "a4de5bd53692ae0e",
+          "source": "cleveland",
+          "provider_rank": 15,
+          "width": 2504,
+          "height": 3400
+        },
+        {
+          "id": "87c45fb7820df3fc",
+          "source": "cleveland",
+          "provider_rank": 8,
+          "width": 2395,
+          "height": 3400
+        },
+        {
+          "id": "557a632bfc816c12",
+          "source": "harvard",
+          "provider_rank": 8,
+          "width": 807,
+          "height": 1024
+        },
+        {
+          "id": "0acb9877230b388c",
+          "source": "aic",
+          "provider_rank": 7,
+          "width": 3468,
+          "height": 2460
+        },
+        {
+          "id": "5284cc9d564531d0",
+          "source": "harvard",
+          "provider_rank": 9,
+          "width": 1950,
+          "height": 2550
+        },
+        {
+          "id": "95435aef2629db41",
+          "source": "loc",
+          "provider_rank": 6,
+          "width": 3986,
+          "height": 3193,
+          "pamela_score": 0.599843,
+          "pamela_rerank": true,
+          "semantic_score": 0.41954
+        },
+        {
+          "id": "d6211cea71ef178a",
+          "source": "cleveland",
+          "provider_rank": 13,
+          "width": 3400,
+          "height": 2282
+        },
+        {
+          "id": "6f110532f3b18a3b",
+          "source": "europeana",
+          "provider_rank": 15,
+          "width": 512,
+          "height": 356,
+          "pamela_score": 0.808152,
+          "pamela_rerank": true,
+          "semantic_score": 0.39837
+        },
+        {
+          "id": "a9ae6f517f432c1b",
+          "source": "harvard",
+          "provider_rank": 11,
+          "width": 675,
+          "height": 1024
+        },
+        {
+          "id": "7f5fcff242e2c386",
+          "source": "vam",
+          "provider_rank": 18,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "4ce4939746f75a6c",
+          "source": "cleveland",
+          "provider_rank": 12,
+          "width": 1972,
+          "height": 3400
+        },
+        {
+          "id": "6899952af3f1be95",
+          "source": "harvard",
+          "provider_rank": 12,
+          "width": 1024,
+          "height": 725
+        },
+        {
+          "id": "261b0a9e1393e77a",
+          "source": "cleveland",
+          "provider_rank": 9,
+          "width": 3400,
+          "height": 2675
+        },
+        {
+          "id": "e8c2bfefa06f08bc",
+          "source": "harvard",
+          "provider_rank": 13,
+          "width": 710,
+          "height": 1024
+        },
+        {
+          "id": "4a048fa570e2fdb9",
+          "source": "cleveland",
+          "provider_rank": 14,
+          "width": 3400,
+          "height": 2621
+        },
+        {
+          "id": "947d16c6021b300e",
+          "source": "rijksmuseum",
+          "provider_rank": 23,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "cbb01be9de6c6121",
+          "source": "rijksmuseum",
+          "provider_rank": 24,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "fd9c224bc9d531f0",
+          "source": "rijksmuseum",
+          "provider_rank": 25,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "02897768910e5210",
+          "source": "aic",
+          "provider_rank": 11,
+          "width": 3708,
+          "height": 2496
+        },
+        {
+          "id": "8277c6b841eb427b",
+          "source": "rijksmuseum",
+          "provider_rank": 18,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "d260ff00750189b6",
+          "source": "cleveland",
+          "provider_rank": 16,
+          "width": 3400,
+          "height": 2541
+        },
+        {
+          "id": "18ecfb6ce2701523",
+          "source": "harvard",
+          "provider_rank": 15,
+          "width": 737,
+          "height": 1024
+        },
+        {
+          "id": "a457e9b0d3b57451",
+          "source": "rijksmuseum",
+          "provider_rank": 21,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0305627af76a7e1b",
+          "source": "harvard",
+          "provider_rank": 16,
+          "width": 717,
+          "height": 1024
+        },
+        {
+          "id": "4f990468cc47a45e",
+          "source": "wellcome",
+          "provider_rank": 22,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "fc9bca94677dd4e4",
+          "source": "vam",
+          "provider_rank": 26,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0a08af0aa80b1896",
+          "source": "rijksmuseum",
+          "provider_rank": 19,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "1b447b28175f27aa",
+          "source": "rijksmuseum",
+          "provider_rank": 26,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "e58fae7b3887ccb3",
+          "source": "commons",
+          "provider_rank": 8,
+          "width": 1100,
+          "height": 1588,
+          "pamela_score": 0.661437,
+          "pamela_rerank": true,
+          "semantic_score": 0.40855
+        },
+        {
+          "id": "931e89bf4b6d5d77",
+          "source": "europeana",
+          "provider_rank": 6,
+          "width": 512,
+          "height": 376,
+          "pamela_score": 0.774075,
+          "pamela_rerank": true,
+          "semantic_score": 0.37953
+        },
+        {
+          "id": "ed5b7cecadcf1995",
+          "source": "commons",
+          "provider_rank": 4,
+          "width": 925,
+          "height": 644,
+          "pamela_score": 0.702538,
+          "pamela_rerank": true,
+          "semantic_score": 0.3683
+        },
+        {
+          "id": "eaaec5dcbf99fe3c",
+          "source": "europeana",
+          "provider_rank": 16,
+          "width": 512,
+          "height": 636,
+          "pamela_score": 0.735447,
+          "pamela_rerank": true,
+          "semantic_score": 0.41228
+        },
+        {
+          "id": "0201e853fbaa99bd",
+          "source": "cleveland",
+          "provider_rank": 0,
+          "width": 2550,
+          "height": 3400,
+          "pamela_score": 0.577964,
+          "pamela_rerank": true,
+          "semantic_score": 0.45155
+        },
+        {
+          "id": "949c6c3770672db1",
+          "source": "wellcome",
+          "provider_rank": 7,
+          "width": 2158,
+          "height": 4122,
+          "pamela_score": 0.576459,
+          "pamela_rerank": true,
+          "semantic_score": 0.38638
+        },
+        {
+          "id": "a0b8928731966d45",
+          "source": "vam",
+          "provider_rank": 13,
+          "width": 1875,
+          "height": 2500,
+          "pamela_score": 0.600065,
+          "pamela_rerank": true,
+          "semantic_score": 0.38801
+        },
+        {
+          "id": "0542b9b2d82689e0",
+          "source": "wellcome",
+          "provider_rank": 0,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "876ddf8da3a5b370",
+          "source": "europeana",
+          "provider_rank": 17,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "69d95118cba4cfd7",
+          "source": "europeana",
+          "provider_rank": 18,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "d09dce8384025b22",
+          "source": "europeana",
+          "provider_rank": 19,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "58cfbe917de4fc7c",
+          "source": "europeana",
+          "provider_rank": 20,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "ff7bd92867f752fe",
+          "source": "europeana",
+          "provider_rank": 21,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "4228c6ffadecef37",
+          "source": "europeana",
+          "provider_rank": 22,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "8b18e5fe624931c3",
+          "source": "europeana",
+          "provider_rank": 23,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "fa77baf7958188e6",
+          "source": "europeana",
+          "provider_rank": 24,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0cf0e52f8bb798fe",
+          "source": "europeana",
+          "provider_rank": 25,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "64d24b428b8de955",
+          "source": "europeana",
+          "provider_rank": 26,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "dbe6ad64119d254c",
+          "source": "harvard",
+          "provider_rank": 2,
+          "width": 611,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "e3dbbebaa40eff7f",
+          "source": "wellcome",
+          "provider_rank": 4,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "f3476b4951e81e9f",
+          "source": "harvard",
+          "provider_rank": 4,
+          "width": 772,
+          "height": 1024,
+          "pamela_rerank": true
+        },
+        {
+          "id": "3415994077449c7f",
+          "source": "aic",
+          "provider_rank": 4,
+          "width": 3000,
+          "height": 2570
+        },
+        {
+          "id": "df55750492d13836",
+          "source": "loc",
+          "provider_rank": 7,
+          "width": 3995,
+          "height": 3265
+        },
+        {
+          "id": "4ddbca1ce2846eb6",
+          "source": "loc",
+          "provider_rank": 8,
+          "width": 4036,
+          "height": 3192
+        },
+        {
+          "id": "7d69ec225d8fbc09",
+          "source": "aic",
+          "provider_rank": 5,
+          "width": 9610,
+          "height": 7362
+        },
+        {
+          "id": "4d87811ffa00ee3f",
+          "source": "loc",
+          "provider_rank": 9,
+          "width": 3160,
+          "height": 3949
+        },
+        {
+          "id": "75a01d5108f407a4",
+          "source": "loc",
+          "provider_rank": 10,
+          "width": 3997,
+          "height": 3176
+        },
+        {
+          "id": "f8ee1b125545b17e",
+          "source": "cleveland",
+          "provider_rank": 3,
+          "width": 2341,
+          "height": 3400,
+          "pamela_score": 0.498633,
+          "pamela_rerank": true,
+          "semantic_score": 0.43782
+        },
+        {
+          "id": "0d8327bda2d39139",
+          "source": "loc",
+          "provider_rank": 11,
+          "width": 3248,
+          "height": 3992
+        },
+        {
+          "id": "017ab3ae469e9a1a",
+          "source": "wellcome",
+          "provider_rank": 9,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "338785ff178e820d",
+          "source": "aic",
+          "provider_rank": 12,
+          "width": 1721,
+          "height": 2250
+        },
+        {
+          "id": "739aab1bde739130",
+          "source": "loc",
+          "provider_rank": 12,
+          "width": 3182,
+          "height": 3971
+        },
+        {
+          "id": "5d2721470d0e03fe",
+          "source": "aic",
+          "provider_rank": 6,
+          "width": 2580,
+          "height": 3000
+        },
+        {
+          "id": "9bad488b69fef25f",
+          "source": "loc",
+          "provider_rank": 13,
+          "width": 3999,
+          "height": 3216
+        },
+        {
+          "id": "50036331a4a042c5",
+          "source": "wellcome",
+          "provider_rank": 10,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "97e23d53db205e2d",
+          "source": "harvard",
+          "provider_rank": 10,
+          "width": 1024,
+          "height": 914
+        },
+        {
+          "id": "746d8d575d8f6021",
+          "source": "aic",
+          "provider_rank": 8,
+          "width": 9598,
+          "height": 7295
+        },
+        {
+          "id": "e00af9e0fe36a4b4",
+          "source": "wellcome",
+          "provider_rank": 14,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "41defc47feab8f27",
+          "source": "wellcome",
+          "provider_rank": 12,
+          "width": 2100,
+          "height": 3388,
+          "pamela_score": 0.496113,
+          "pamela_rerank": true,
+          "semantic_score": 0.4225
+        },
+        {
+          "id": "2cd9480456d6a599",
+          "source": "aic",
+          "provider_rank": 9,
+          "width": 2794,
+          "height": 2250
+        },
+        {
+          "id": "9a44ef416a2ca2da",
+          "source": "aic",
+          "provider_rank": 10,
+          "width": 1623,
+          "height": 2250
+        },
+        {
+          "id": "7689749b9d6e2fbc",
+          "source": "loc",
+          "provider_rank": 3,
+          "width": 1024,
+          "height": 696,
+          "pamela_score": 0.549226,
+          "pamela_rerank": true,
+          "semantic_score": 0.39985
+        },
+        {
+          "id": "909e352918ec62f0",
+          "source": "wellcome",
+          "provider_rank": 16,
+          "width": 0,
+          "height": 0,
+          "pamela_rerank": true
+        },
+        {
+          "id": "0839f33114c7e445",
+          "source": "wellcome",
+          "provider_rank": 17,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f0c46f4ea81e675d",
+          "source": "wellcome",
+          "provider_rank": 20,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "f783ce2b3685ed36",
+          "source": "harvard",
+          "provider_rank": 14,
+          "width": 7298,
+          "height": 5607
+        },
+        {
+          "id": "ee2898110971a83f",
+          "source": "wellcome",
+          "provider_rank": 21,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "5ac3c33699ae152c",
+          "source": "wellcome",
+          "provider_rank": 18,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "86e2cbecc1fdec64",
+          "source": "wellcome",
+          "provider_rank": 19,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "b42bbce9744df9ad",
+          "source": "wellcome",
+          "provider_rank": 23,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "19de9b282a051b62",
+          "source": "wellcome",
+          "provider_rank": 24,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "e8545fe559fa8f37",
+          "source": "wellcome",
+          "provider_rank": 25,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "77d7598bf781ff81",
+          "source": "loc",
+          "provider_rank": 14,
+          "width": 1024,
+          "height": 683
+        },
+        {
+          "id": "e898483bafe33169",
+          "source": "wellcome",
+          "provider_rank": 26,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "2512b09eb09077d9",
+          "source": "rijksmuseum",
+          "provider_rank": 7,
+          "width": 2262,
+          "height": 3538,
+          "pamela_score": 0.484845,
+          "pamela_rerank": true,
+          "semantic_score": 0.43495
+        },
+        {
+          "id": "810d3f8a83eca7cf",
+          "source": "loc",
+          "provider_rank": 16,
+          "width": 1024,
+          "height": 683
+        },
+        {
+          "id": "16d8fb5593bb2fbd",
+          "source": "wellcome",
+          "provider_rank": 11,
+          "width": 2423,
+          "height": 3147,
+          "pamela_score": 0.400696,
+          "pamela_rerank": true,
+          "semantic_score": 0.38911
+        },
+        {
+          "id": "c6c558c2e90063df",
+          "source": "vam",
+          "provider_rank": 9,
+          "width": 2500,
+          "height": 1672,
+          "pamela_score": 0.358575,
+          "pamela_rerank": true,
+          "semantic_score": 0.37859
+        },
+        {
+          "id": "c0e5e47e4a4ee27f",
+          "source": "gnosis",
+          "provider_rank": 4,
+          "width": 3200,
+          "height": 1523
+        },
+        {
+          "id": "b29b942a1b0c1067",
+          "source": "mia",
+          "provider_rank": 17,
+          "width": 1678,
+          "height": 2098
+        },
+        {
+          "id": "176a96e8c18a39a0",
+          "source": "mia",
+          "provider_rank": 18,
+          "width": 2317,
+          "height": 3244
+        },
+        {
+          "id": "3d43f43a55c0957e",
+          "source": "mia",
+          "provider_rank": 19,
+          "width": 2879,
+          "height": 4030
+        },
+        {
+          "id": "9a6975f02b2af0f0",
+          "source": "mia",
+          "provider_rank": 20,
+          "width": 2628,
+          "height": 3679
+        },
+        {
+          "id": "90d24d6530f9e66b",
+          "source": "mia",
+          "provider_rank": 23,
+          "width": 1936,
+          "height": 2592
+        },
+        {
+          "id": "dbaa2c8ced1ac952",
+          "source": "mia",
+          "provider_rank": 24,
+          "width": 2314,
+          "height": 3240
+        },
+        {
+          "id": "011228009ef20ac2",
+          "source": "mia",
+          "provider_rank": 25,
+          "width": 3224,
+          "height": 4030
+        },
+        {
+          "id": "4d6919305aaba644",
+          "source": "mia",
+          "provider_rank": 26,
+          "width": 2472,
+          "height": 3461
+        },
+        {
+          "id": "c6b70f016fbbdbc7",
+          "source": "rijksmuseum",
+          "provider_rank": 17,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "0d46980e6deb6b91",
+          "source": "rijksmuseum",
+          "provider_rank": 20,
+          "width": 0,
+          "height": 0
+        },
+        {
+          "id": "13fc4b444284a3c8",
+          "source": "europeana",
+          "provider_rank": 0,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.305609,
+          "pamela_rerank": true,
+          "semantic_score": 0.41832
+        },
+        {
+          "id": "a9f74d28da9642d8",
+          "source": "wellcome",
+          "provider_rank": 1,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.704952,
+          "pamela_rerank": true,
+          "semantic_score": 0.41326
+        },
+        {
+          "id": "8d5fdcb745d94822",
+          "source": "wellcome",
+          "provider_rank": 3,
+          "width": 0,
+          "height": 0,
+          "pamela_score": 0.71067,
+          "pamela_rerank": true,
+          "semantic_score": 0.39449
+        }
+      ]
+    }
+  ]
+}

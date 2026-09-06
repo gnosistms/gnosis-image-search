@@ -28,7 +28,7 @@ test('incoming snapshots cannot redisplay a provider that is now unchecked', () 
 test('a completed empty provider clears the searching spinner', () => {
   assert.match(
     script,
-    /const active = policies\.filter\(policy => policy\.continue\)\.length;[\s\S]*?setGallerySearching\(Boolean\(active && !currentResults\.length\)\)/,
+    /const active = snapshot\.stream_running \|\| snapshot\.lifecycle === "running";[\s\S]*?setGallerySearching\(Boolean\(active && !currentResults\.length\)\)/,
   );
   assert.match(
     script,

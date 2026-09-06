@@ -60,10 +60,11 @@ def _book_artifact_retention(axis_score: float) -> float:
     return float(1.0 / (1.0 + np.exp(-z)))
 
 
-def add_pamela_scores(items: list[dict]) -> None:
+def add_pamela_scores(items: list[dict], vectors=None) -> None:
     if not items or not _load():
         return
-    vectors = image_vectors(items)
+    if vectors is None:
+        vectors = image_vectors(items)
     for item in items:
         vector = vectors.get(item.get("id"))
         if vector is None or vector.shape != _VECTOR.shape:

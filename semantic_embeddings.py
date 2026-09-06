@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import io
+from contextlib import closing
 import os
 import sqlite3
 import threading
 import urllib.request
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from search_runtime import check_work, count, network_timeout, submit
 
 
 MODEL_KIND = os.environ.get("SEARCH_MODEL_KIND", "siglip").strip().lower()
@@ -38,6 +40,8 @@ _CACHE_LOCK = threading.RLock()
 _MEMORY_CACHE: OrderedDict[str, np.ndarray] = OrderedDict()
 _TEXT_CACHE: OrderedDict[str, np.ndarray] = OrderedDict()
 _MAX_MEMORY_VECTORS = 512
+_DOWNLOAD_LOCK = threading.Lock()
+_DOWNLOAD_INFLIGHT = {}
 
 
 def _feature_tensor(value):
@@ -150,6 +154,31 @@ def _database_vector(url: str) -> np.ndarray | None:
     return _remember(url, np.frombuffer(row[0], dtype="float32").copy())
 
 
+def cached_image_vectors(items: list[dict]) -> dict[str, np.ndarray]:
+    """Read all cached vectors once; misses live only for this call."""
+    urls = {url for item in items for url in _image_urls(item)}
+    with _CACHE_LOCK:
+        found = {url: _MEMORY_CACHE[url] for url in urls if url in _MEMORY_CACHE}
+    missing = list(urls - found.keys())
+    if missing and CACHE_PATH.is_file():
+        try:
+            count("sqlite_connections")
+            with closing(sqlite3.connect(CACHE_PATH)) as connection:
+                for offset in range(0, len(missing), 400):
+                    chunk = missing[offset:offset+400]
+                    rows = connection.execute(
+                        "SELECT url, vector FROM embeddings WHERE model = ? AND url IN ("
+                        + ",".join("?" for _ in chunk) + ")",
+                        [MODEL_CACHE_KEY, *chunk],
+                    ).fetchall()
+                    for url, blob in rows:
+                        found[url] = _remember(url, np.frombuffer(blob, dtype="float32").copy())
+        except (OSError, sqlite3.Error):
+            pass
+    return {item["id"]: next(found[url] for url in _image_urls(item) if url in found)
+            for item in items if item.get("id") and any(url in found for url in _image_urls(item))}
+
+
 def _store_vectors(vectors: dict[str, np.ndarray]) -> None:
     if not vectors:
         return
@@ -175,12 +204,51 @@ def _store_vectors(vectors: dict[str, np.ndarray]) -> None:
 
 
 def _download_image(url: str) -> Image.Image | None:
+    """Share overlapping downloads; each caller owns its image copy."""
+    check_work()
+    with _DOWNLOAD_LOCK:
+        flight = _DOWNLOAD_INFLIGHT.get(url)
+        owner = flight is None
+        if owner:
+            flight = _DOWNLOAD_INFLIGHT[url] = [Future(), 0]
+        flight[1] += 1
+    try:
+        if owner:
+            try:
+                flight[0].set_result(_download_image_once(url))
+            except BaseException as exc:
+                flight[0].set_exception(exc)
+        else:
+            count("image_downloads_coalesced")
+        while not flight[0].done():
+            check_work()
+            try:
+                flight[0].result(timeout=.1)
+            except TimeoutError:
+                pass
+        image = flight[0].result()
+        return image.copy() if image is not None else None
+    finally:
+        with _DOWNLOAD_LOCK:
+            flight[1] -= 1
+            if not flight[1]:
+                _DOWNLOAD_INFLIGHT.pop(url, None)
+                if flight[0].done() and flight[0].exception() is None:
+                    image = flight[0].result()
+                    if image is not None:
+                        image.close()
+
+
+def _download_image_once(url: str) -> Image.Image | None:
     if not url or url.endswith(".test") or ".test/" in url:
         return None
     try:
         request = urllib.request.Request(url, headers={"User-Agent": UA})
-        with urllib.request.urlopen(request, timeout=8) as response:
+        count("image_downloads")
+        with urllib.request.urlopen(request, timeout=network_timeout(8)) as response:
             data = response.read(MAX_IMAGE_BYTES + 1)
+        count("image_bytes", len(data))
+        check_work()
         if len(data) > MAX_IMAGE_BYTES:
             return None
         image = Image.open(io.BytesIO(data)).convert("RGB")
@@ -191,37 +259,67 @@ def _download_image(url: str) -> Image.Image | None:
 
 
 def _download_item_image(item: dict) -> Image.Image | None:
+    if item.get("source") == "harvard":
+        from harvard_images import fetch_harvard_preview
+        try:
+            data, _mime = fetch_harvard_preview(item, attempts=2)
+            image = Image.open(io.BytesIO(data)).convert("RGB")
+            image.load()
+            from visual_similarity import remember_image_feature
+            remember_image_feature(item, image)
+            return image
+        except Exception:
+            check_work()
+            return None
     # Jetpack/i0 thumbnails are occasionally unavailable even though the
     # corresponding first-party WordPress upload works normally.
     for url in _image_urls(item):
+        check_work()
         image = _download_image(url)
         if image is not None:
+            from visual_similarity import remember_image_feature
+            remember_image_feature(item, image)
             return image
     return None
 
 
-def image_vectors(items: list[dict]) -> dict[str, np.ndarray]:
-    """Return available normalized image vectors keyed by result id."""
+def prepare_image_vectors(items: list[dict]):
+    """Bounded download preparation, independent of the inference worker."""
     keyed_items = {item["id"]: item for item in items if item.get("id")}
-    vectors = {
-        item_id: vector
-        for item_id, item in keyed_items.items()
-        if (vector := _cached_item_vector(item)) is not None
-    }
+    vectors = cached_image_vectors(items)
     missing = [item for item_id, item in keyed_items.items() if item_id not in vectors]
-    if missing and _load_model():
-        downloaded = {}
-        with ThreadPoolExecutor(max_workers=min(8, len(missing))) as pool:
-            futures = {
-                pool.submit(_download_item_image, item): item["id"]
-                for item in missing
-            }
-            for future in as_completed(futures):
+    downloaded = {}
+    futures = {}
+    try:
+        if missing and _load_model():
+            with ThreadPoolExecutor(max_workers=min(8, len(missing))) as pool:
+                futures = {
+                    submit(pool, _download_item_image, item): item["id"]
+                    for item in missing
+                }
+                for future in as_completed(futures):
+                    image = future.result()
+                    if image is not None:
+                        downloaded[futures[future]] = image
+    except BaseException:
+        # The pool has joined; also close successful results that arrived after
+        # another download raised cancellation/deadline expiry.
+        for future in futures:
+            if not future.cancelled() and future.exception() is None:
                 image = future.result()
                 if image is not None:
-                    downloaded[futures[future]] = image
-        if downloaded:
-            ordered = list(downloaded)
+                    image.close()
+        raise
+    return keyed_items, vectors, downloaded
+
+
+def encode_prepared_images(prepared) -> dict[str, np.ndarray]:
+    keyed_items, vectors, downloaded = prepared
+    try:
+        # Limit device memory even for callers outside the ten-image scheduler.
+        for offset in range(0, len(downloaded), 10):
+            check_work()
+            ordered = list(downloaded)[offset:offset+10]
             with _MODEL_LOCK, _TORCH.inference_mode():
                 inputs = _PROCESSOR(
                     images=[downloaded[url] for url in ordered], return_tensors="pt",
@@ -237,7 +335,15 @@ def image_vectors(items: list[dict]) -> dict[str, np.ndarray]:
             }
             _store_vectors(aliases)
             vectors.update(fresh)
-    return vectors
+        return vectors
+    finally:
+        for image in downloaded.values():
+            image.close()
+
+
+def image_vectors(items: list[dict]) -> dict[str, np.ndarray]:
+    """Return available normalized image vectors keyed by result id."""
+    return encode_prepared_images(prepare_image_vectors(items))
 
 
 def text_vector(query: str) -> np.ndarray | None:
@@ -264,14 +370,15 @@ def text_vector(query: str) -> np.ndarray | None:
     return vector
 
 
-def add_semantic_scores(query: str, items: list[dict]) -> None:
+def add_semantic_scores(query: str, items: list[dict], vectors=None) -> None:
     """Attach normalized CLIP relevance to items in place when available."""
     if not items:
         return
     query_embedding = text_vector(query)
     if query_embedding is None:
         return
-    vectors = image_vectors(items)
+    if vectors is None:
+        vectors = image_vectors(items)
     for item in items:
         vector = vectors.get(item.get("id"))
         if vector is None:

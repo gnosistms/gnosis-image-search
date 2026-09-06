@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from search_runtime import (check_work, network_timeout, pause, count, note_failure, WorkExpired, submit, map_work)
+
 import csv
 import concurrent.futures
 import hashlib
@@ -408,7 +410,7 @@ def _build_universal_comasonry_catalog(*, enrich: bool = True) -> list[dict]:
     # The source has no search API. Fetch its small set of overview pages in
     # parallel once, then reuse the disk catalog for a week.
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(fetch_gallery, gallery) for gallery in galleries]
+        futures = [submit(executor, fetch_gallery, gallery) for gallery in galleries]
         for future in concurrent.futures.as_completed(futures):
             try:
                 records.extend(future.result())
@@ -439,7 +441,7 @@ def _enrich_universal_comasonry_catalog(records: list[dict]) -> list[dict]:
     # once while building the weekly cache so subject/name searches can find
     # images whose thumbnail titles use different terminology.
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        records = list(executor.map(_enrich_universal_comasonry_item, records))
+        records = list(map_work(executor, _enrich_universal_comasonry_item, records))
     records.sort(key=lambda item: (item["medium"].casefold(), item["title"].casefold()))
     return records
 
@@ -547,7 +549,7 @@ def universal_comasonry(query: str, need: int, cue=None) -> list[dict]:
     # Do not make a user wait for the weekly background crawl before captions
     # are useful. Enrich only the small set actually being returned.
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(selected) or 1)) as executor:
-        return list(executor.map(
+        return list(map_work(executor,
             lambda item: item if item.get("detail_enriched")
             else _enrich_universal_comasonry_item(item),
             selected,
@@ -1075,7 +1077,7 @@ def getty(query: str, need: int, cue=None) -> list[dict]:
         return item
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(items) or 1)) as pool:
-        items = [item for item in pool.map(resolve_parent, items) if item]
+        items = [item for item in map_work(pool, resolve_parent, items) if item]
 
     def fetch_description_and_context(item):
         description = ""
@@ -1102,7 +1104,7 @@ def getty(query: str, need: int, cue=None) -> list[dict]:
 
     count = min(need, len(items))
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, count or 1)) as pool:
-        descriptions = list(pool.map(fetch_description_and_context, items[:count]))
+        descriptions = [future.result() for future in [submit(pool, fetch_description_and_context, value) for value in items[:count]]]
     for item, (description, context) in zip(items, descriptions):
         item["description"] = description
         if context:
@@ -1367,7 +1369,7 @@ def harvard(query: str, need: int, cue=None) -> list[dict]:
     import sources
     api_key = _harvard_key()
     if not api_key:
-        return []
+        raise RuntimeError("Harvard API key is not configured in this app")
     fields = ",".join((
         "objectid", "title", "titles", "people", "dated", "classification", "technique",
         "medium", "primaryimageurl", "images", "url", "copyright",
@@ -1612,7 +1614,7 @@ def _post_json_cached(url: str, payload: dict, headers: dict, source: str) -> di
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
+        with urllib.request.urlopen(request, timeout=network_timeout(45)) as response:
             data = json.loads(response.read().decode("utf-8"))
         if not data.get("errors"):
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1702,7 +1704,7 @@ def paris_musees(query: str, need: int, cue=None) -> list[dict]:
 
     count = min(need, len(items))
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, count or 1)) as pool:
-        descriptions = list(pool.map(fetch_description, items[:count]))
+        descriptions = [future.result() for future in [submit(pool, fetch_description, value) for value in items[:count]]]
     for item, description in zip(items, descriptions):
         item["description"] = description
     return items
@@ -1746,7 +1748,7 @@ class NGACatalog:
                     NGA_ARCHIVE_URL,
                     headers={"User-Agent": "GnosisInteractiveImageSearch/1.0"},
                 )
-                with urllib.request.urlopen(request, timeout=120) as response:
+                with urllib.request.urlopen(request, timeout=network_timeout(120)) as response:
                     while chunk := response.read(1024 * 1024):
                         archive.write(chunk)
             self.build_from_archive(archive_path)

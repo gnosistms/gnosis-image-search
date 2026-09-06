@@ -3,6 +3,7 @@
  image_url, thumb_url, width, height, description}
 All requests are disk-cached and polite. Unconfigured/failing sources return [].
 """
+from search_runtime import (check_work, network_timeout, pause, count, note_failure, WorkExpired, submit, map_work)
 import base64, concurrent.futures, hashlib, html, io, json, os, re, threading, time, unicodedata
 import urllib.request, urllib.parse
 
@@ -39,6 +40,7 @@ def _europeana_access_error_message(payload):
     return message if any(marker in folded for marker in access_markers) else ""
 
 def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
+    check_work()
     key = hashlib.sha1(url.encode()).hexdigest()[:20]
     cpath = os.path.join(CACHE, f"{source}_{key}.json")
     if ttl_ok and os.path.exists(cpath):
@@ -53,33 +55,43 @@ def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
         import requests
         wait = DELAY - (time.time() - _last_call.get(source, 0))
         if wait > 0:
-            time.sleep(wait)
+            pause(wait)
         for attempt in range(attempts):
+            check_work()
+            count("provider_requests")
             try:
                 response = requests.get(url, headers={**UA, **(headers or {})},
-                                        timeout=timeout)
+                                        timeout=network_timeout(timeout))
                 if response.status_code in (429, 500, 502, 503):
-                    time.sleep(5 * (attempt + 1))
+                    pause(5 * (attempt + 1))
                     continue
                 response.raise_for_status()
                 data = response.json()
                 _last_call[source] = time.time()
                 json.dump(data, open(cpath, "w"))
                 return data
+            except WorkExpired:
+                raise
             except Exception:
-                time.sleep(2 * (attempt + 1))
+                pause(2 * (attempt + 1))
+        note_failure()
         return None
     wait = DELAY - (time.time() - _last_call.get(source, 0))
     if wait > 0:
-        time.sleep(wait)
+        pause(wait)
+    last_failure = ""
     for attempt in range(attempts):
+        check_work()
+        count("provider_requests")
         try:
             req = urllib.request.Request(url, headers={**UA, **(headers or {})})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with urllib.request.urlopen(req, timeout=network_timeout(timeout)) as r:
                 data = json.loads(r.read().decode())
             _last_call[source] = time.time()
             json.dump(data, open(cpath, "w"))
             return data
+        except WorkExpired:
+            raise
         except urllib.error.HTTPError as e:
             if source == "europeana" and e.code in (401, 403, 429):
                 # Europeana documents 429 for an application usage limit and
@@ -88,10 +100,19 @@ def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
                 # the same actionable credential warning in the UI.
                 raise EuropeanaAccessError(e.code) from e
             if e.code in (429, 500, 502, 503):
-                time.sleep(5 * (attempt + 1)); continue
+                last_failure = ("Collection is rate limiting requests (HTTP 429)" if e.code == 429
+                                else f"Collection service error (HTTP {e.code})")
+                count("provider_retries")
+                pause(5 * (attempt + 1)); continue
+            if e.code != 404:
+                note_failure(f"Collection refused access (HTTP {e.code})" if e.code in (401, 403)
+                             else f"Collection request failed (HTTP {e.code})")
             return None
-        except Exception:
-            time.sleep(2 * (attempt + 1))
+        except Exception as exc:
+            last_failure = ("Collection request timed out" if isinstance(exc, TimeoutError)
+                            else "Collection connection failed")
+            pause(2 * (attempt + 1))
+    note_failure(last_failure)
     return None
 
 def _q(s):
@@ -228,6 +249,10 @@ def cleveland(query, need, cue=None, *, exact_phrase=None, smart_parts=None):
             "cleveland",
         )
         candidates = list((d or {}).get("data") or [])
+    return _cleveland_records(candidates)[:max(need * 2, need)]
+
+
+def _cleveland_records(candidates):
     out = []
     for a in candidates:
         try:
@@ -256,7 +281,21 @@ def cleveland(query, need, cue=None, *, exact_phrase=None, smart_parts=None):
                         "height": int(full.get("height") or web.get("height") or 0)})
         except Exception:
             continue
-    return out[:max(need * 2, need)]
+    return out
+
+
+def cleveland_page(query, offset, limit):
+    """Native ordinary-search page; exact phrases retain their verified adapter."""
+    params = {"q": query, "has_image": 1, "limit": limit, "skip": offset}
+    data = _get_json("https://openaccess-api.clevelandart.org/api/artworks/?"
+                     + urllib.parse.urlencode(params), "cleveland")
+    if data is None:
+        raise RuntimeError("Cleveland request failed")
+    rows = list(data.get("data") or [])
+    total = int((data.get("info") or {}).get("total") or 0)
+    next_offset = offset + len(rows)
+    exhausted = len(rows) < limit or bool(total and next_offset >= total)
+    return _cleveland_records(rows), next_offset, exhausted
 
 # ---------------- Metropolitan Museum ----------------
 
@@ -382,7 +421,7 @@ def _filter_aic_commons_quality(artworks, commons):
     if not matched:
         return dict(commons)
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(matched))) as pool:
-        accepted = pool.map(lambda pair: _aic_commons_is_current_quality(*pair), matched)
+        accepted = map_work(pool, lambda pair: _aic_commons_is_current_quality(*pair), matched)
     rejected = {str(a.get("id")) for (a, _), keep in zip(matched, accepted) if not keep}
     return {artwork_id: url for artwork_id, url in commons.items()
             if artwork_id not in rejected}
@@ -474,7 +513,7 @@ def _hf_aic_images_for(artwork_ids):
     if not ids:
         return {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(ids))) as pool:
-        previews = pool.map(_hf_aic_image, ids)
+        previews = map_work(pool, _hf_aic_image, ids)
     return {artwork_id: preview for artwork_id, preview in zip(ids, previews)
             if preview}
 
@@ -507,7 +546,7 @@ def _wayback_aic_images_for(artworks):
     if not items:
         return {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(items))) as pool:
-        previews = pool.map(lambda pair: _wayback_aic_image(pair[1]), items)
+        previews = map_work(pool, lambda pair: _wayback_aic_image(pair[1]), items)
     return {artwork_id: preview for (artwork_id, _), preview in zip(items, previews)
             if preview}
 
@@ -616,8 +655,8 @@ def aic(query, need, cue=None):
     # These are independent remote indexes. Start both immediately so latency
     # is the slower lookup rather than the sum of two sequential lookups.
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        commons_future = pool.submit(_aic_commons_images, artwork_ids)
-        hf_future = pool.submit(_hf_aic_images_for, artwork_ids)
+        commons_future = submit(pool, _aic_commons_images, artwork_ids)
+        hf_future = submit(pool, _hf_aic_images_for, artwork_ids)
         commons = _filter_aic_commons_quality(artworks, commons_future.result())
         hf_previews = hf_future.result()
     wayback_previews = _wayback_aic_images_for(
@@ -731,7 +770,7 @@ def smk(query, need, cue=None):
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=min(6, len(unresolved) or 1)
         ) as pool:
-            enrichments = dict(zip(unresolved, pool.map(fetch_enrichment, unresolved)))
+            enrichments = dict(zip(unresolved, map_work(pool, fetch_enrichment, unresolved)))
     out = []
     for a in records:
         try:
@@ -952,7 +991,7 @@ def wellcome(query, need, cue=None, *, exact_phrases=()):
                + urllib.parse.urlencode({"include": "contributors,production"}))
         return _get_json(url, "wellcome_works") or {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(work_ids) or 1)) as pool:
-        work_records = pool.map(fetch_work, work_ids)
+        work_records = map_work(pool, fetch_work, work_ids)
     work_by_id = dict(zip(work_ids, work_records))
     out = []
     for a in results:
@@ -1001,7 +1040,7 @@ def wellcome(query, need, cue=None, *, exact_phrases=()):
                                          or {}).get("label") or "CC-BY/PD")),
                         "page_url": f"https://wellcomecollection.org/works/{work_id}",
                         "image_url": f"{base}/full/max/0/default.jpg",
-                        "thumb_url": f"{base}/full/1024,/0/default.jpg",
+                        "thumb_url": f"{base}/full/!640,640/0/default.jpg",
                         "width": 0, "height": 0})
         except Exception:
             continue
@@ -1030,7 +1069,7 @@ def vam(query, need, cue=None):
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=min(6, len(system_numbers) or 1)
     ) as pool:
-        details = list(pool.map(fetch_record, system_numbers))
+        details = [future.result() for future in [submit(pool, fetch_record, value) for value in system_numbers]]
     details.extend({} for _ in records[detail_count:])
 
     out = []
@@ -1390,7 +1429,7 @@ def gnosis(query, need, cue=None):
 
 def _gnosis_live(query, need, cue=None):
     import html as _html, re as _re
-    from gnosis_catalog import artwork_metadata
+    from gnosis_catalog import artwork_metadata, wordpress_original_media
     verify_single_term = len(_wellcome_search_tokens(query)) == 1
     d = _get_json("https://gnosisvn.org/wp-json/wp/v2/media?"
                   + urllib.parse.urlencode({"search": query, "media_type": "image",
@@ -1402,6 +1441,7 @@ def _gnosis_live(query, need, cue=None):
             if not str(m.get("mime_type", "")).startswith("image/"):
                 continue
             md = m.get("media_details", {}) or {}
+            original_url, original_width, original_height = wordpress_original_media(m)
             sizes = md.get("sizes") or {}
             thumb = next((sizes[s]["source_url"] for s in
                           ("1536x1536", "medium_large", "large")
@@ -1434,9 +1474,9 @@ def _gnosis_live(query, need, cue=None):
                         "description": " · ".join(filter(None, [english, cap])),
                         "license": "house (gnosisvn.org)",
                         "page_url": m.get("link", ""),
-                        "image_url": m.get("source_url", ""),
+                        "image_url": original_url,
                         "thumb_url": thumb or m.get("source_url", ""),
-                        "width": md.get("width") or 0, "height": md.get("height") or 0})
+                        "width": original_width, "height": original_height})
         except Exception:
             continue
     return out
@@ -1510,7 +1550,7 @@ def _filter_europeana_nhm_registers(items):
         max_workers=min(3, len(assets)),
     ) as pool:
         futures = {
-            pool.submit(_nhm_media_categories, asset_id): asset_id
+            submit(pool, _nhm_media_categories, asset_id): asset_id
             for asset_id in assets
         }
         for future in concurrent.futures.as_completed(futures):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from search_runtime import (check_work, network_timeout, pause, count, note_failure, WorkExpired, submit)
+
 import html
 import json
 import os
@@ -87,8 +89,32 @@ def artwork_metadata(
     return artist, date
 
 
+def wordpress_original_media(item: dict) -> tuple[str, int, int]:
+    """Return the largest WordPress upload URL and its trustworthy dimensions."""
+    details = item.get("media_details") or {}
+    source_url = str(item.get("source_url") or "")
+    width = int(details.get("width") or 0)
+    height = int(details.get("height") or 0)
+    original_name = str(details.get("original_image") or "").strip()
+    if not original_name or not source_url:
+        return source_url, width, height
+
+    parsed = urllib.parse.urlsplit(source_url)
+    directory = parsed.path.rsplit("/", 1)[0]
+    original_path = f"{directory}/{urllib.parse.quote(original_name)}"
+    original_url = urllib.parse.urlunsplit((
+        parsed.scheme, parsed.netloc, original_path, "", "",
+    ))
+    # Core WordPress metadata describes the generated `-scaled` derivative in
+    # width/height but normally stores only the pre-scaled original's filename.
+    # Leave its dimensions unresolved so the search enrichment measures the
+    # actual original file before the result is displayed.
+    return original_url, 0, 0
+
+
 def wordpress_record(item: dict) -> dict:
     details = item.get("media_details") or {}
+    original_url, original_width, original_height = wordpress_original_media(item)
     sizes = details.get("sizes") or {}
     thumb = next((sizes[name].get("source_url", "") for name in
                   ("1536x1536", "medium_large", "large", "medium")
@@ -118,10 +144,10 @@ def wordpress_record(item: dict) -> dict:
         "artist": artist,
         "date": artwork_date,
         "page_url": str(item.get("link") or ""),
-        "image_url": str(item.get("source_url") or ""),
+        "image_url": original_url,
         "thumb_url": thumb or str(item.get("source_url") or ""),
-        "width": int(details.get("width") or 0),
-        "height": int(details.get("height") or 0),
+        "width": original_width,
+        "height": original_height,
         "modified": str(item.get("modified_gmt") or item.get("modified") or ""),
     }
 
@@ -171,7 +197,7 @@ class GnosisCatalog:
     def _request(self, params: dict) -> tuple[list[dict], int, int]:
         query = urllib.parse.urlencode({**params, "_cb": int(time.time())})
         request = urllib.request.Request(f"{API}?{query}", headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=network_timeout(30)) as response:
             batch = json.loads(response.read().decode("utf-8"))
             total = int(response.headers.get("X-WP-Total") or len(batch))
             total_pages = int(response.headers.get("X-WP-TotalPages") or 1)

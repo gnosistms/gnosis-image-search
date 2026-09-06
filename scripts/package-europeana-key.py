@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the packaged Europeana credential without printing secret data."""
+"""Package configured collection credentials without printing secret data."""
 
 from __future__ import annotations
 
@@ -24,8 +24,12 @@ def main() -> int:
         parser.error(
             "Europeana key not found; set EUROPEANA_API_KEY or SEARCH_KEYS_FILE"
         )
-    keys.write_encrypted({"europeana": europeana_key}, args.output_dir)
-    print(f"Packaged encrypted Europeana credential in {args.output_dir}")
+    providers = {"europeana": europeana_key}
+    harvard_key = keys.get_key("harvard") or keys.get_key("harvard_art_museums")
+    if harvard_key:
+        providers["harvard"] = harvard_key
+    keys.write_encrypted(providers, args.output_dir)
+    print(f"Packaged encrypted credentials for {', '.join(providers)} in {args.output_dir}")
     return 0
 
 

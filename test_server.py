@@ -4,6 +4,7 @@ import threading
 import time
 import tempfile
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -336,6 +337,39 @@ class RankingTests(unittest.TestCase):
         ranked = ranker.rank_results("historical image", [original, upscale])
         self.assertEqual(len(ranked), 1)
         self.assertEqual(ranked[0]["id"], upscale["id"])
+
+    def test_gnosis_reordered_title_prefers_high_resolution_reupload(self):
+        old = server.normalize_result({
+            **result(
+                "gnosis", "Temptation of Christ – Ary Scheffer", "8373",
+                width=1280, height=1799,
+            ),
+            "artist": "Ary Scheffer", "date": "1886",
+            "page_url": (
+                "https://gnosisvn.org/2021/10/11/"
+                "chua-gie-su-bi-ac-quy-cam-do/fd000647/"
+            ),
+        }, 0)
+        replacement = server.normalize_result({
+            **result(
+                "gnosis", "Ary-Scheffer-Temptation-of-Christ", "24064",
+                width=2892, height=4000,
+            ),
+            "artist": "Ary Scheffer", "date": "1854",
+            "page_url": "https://gnosisvn.org/ary-scheffer-temptation-of-christ/",
+        }, 1)
+
+        ranked, families = ranker.rank_result_groups(
+            "temptation of christ", [old, replacement]
+        )
+
+        self.assertEqual(len(ranked), 1)
+        self.assertEqual(ranked[0]["source_id"], "24064")
+        self.assertEqual((ranked[0]["width"], ranked[0]["height"]), (2892, 4000))
+        self.assertEqual(ranked[0]["page_url"], replacement["page_url"])
+        self.assertEqual(ranked[0]["preview_click_url"], replacement["image_url"])
+        self.assertEqual(ranked[0]["preview_click_action"], "open_original_image")
+        self.assertEqual(len(families[ranked[0]["id"]]), 2)
 
     def test_rank_is_log2_pixel_area_times_siglip_relevance(self):
         item = server.normalize_result(
@@ -699,7 +733,7 @@ class SessionTests(unittest.TestCase):
         sleeps = []
         original_urlopen = server.urllib.request.urlopen
         original_cookie = server.harvard_cookie
-        original_sleep = server.time.sleep
+        original_sleep = server.harvard_images.pause
 
         class Response:
             def __enter__(self):
@@ -725,7 +759,7 @@ class SessionTests(unittest.TestCase):
 
         server.urllib.request.urlopen = urlopen
         server.harvard_cookie = cookie
-        server.time.sleep = sleeps.append
+        server.harvard_images.pause = sleeps.append
         try:
             data, mime = server.fetch_harvard_preview({
                 "thumb_url": (
@@ -739,7 +773,7 @@ class SessionTests(unittest.TestCase):
         finally:
             server.urllib.request.urlopen = original_urlopen
             server.harvard_cookie = original_cookie
-            server.time.sleep = original_sleep
+            server.harvard_images.pause = original_sleep
 
         self.assertEqual((data, mime), (jpeg, "image/jpeg"))
         self.assertEqual(len(image_calls), 3)
@@ -2577,6 +2611,24 @@ class BatchTests(unittest.TestCase):
         )
         self.assertEqual(record["date"], "1640")
 
+    def test_gnosis_catalog_uses_preserved_original_instead_of_scaled_upload(self):
+        record = gnosis_catalog.wordpress_record({
+            "id": 99,
+            "source_url": "https://gnosis.test/uploads/work-scaled.jpg",
+            "media_details": {
+                "width": 2560,
+                "height": 1707,
+                "original_image": "work original.jpg",
+                "sizes": {},
+            },
+        })
+
+        self.assertEqual(
+            record["image_url"],
+            "https://gnosis.test/uploads/work%20original.jpg",
+        )
+        self.assertEqual((record["width"], record["height"]), (0, 0))
+
     def test_gnosis_catalog_prefers_explicit_image_credit_and_date(self):
         artist, artwork_date = gnosis_catalog.artwork_metadata(
             title="1640-50",
@@ -3103,6 +3155,19 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(item["preview_click_url"], item["page_url"])
         self.assertEqual(item["download_url"], item["image_url"])
 
+    def test_gnosis_preview_opens_original_instead_of_attachment_permalink(self):
+        item = server.normalize_result(result(
+            "gnosis", source_id="24064",
+            page_url="https://gnosisvn.org/ary-scheffer-temptation-of-christ/",
+            image_url=(
+                "https://gnosisvn.org/wp-content/uploads/2025/09/"
+                "Ary-Scheffer-Temptation-of-Christ.webp"
+            ),
+        ))
+        self.assertEqual(item["preview_click_action"], "open_original_image")
+        self.assertEqual(item["preview_click_url"], item["image_url"])
+        self.assertEqual(item["download_url"], item["image_url"])
+
     def test_normalization_visits_aic_page_and_exposes_commons_download(self):
         item = server.normalize_result(result(
             "aic", source_id="42", image_delivery="commons",
@@ -3150,118 +3215,34 @@ class BatchTests(unittest.TestCase):
         try:
             self.assertTrue(all_started.wait(1))
             self.assertEqual({item[0] for item in started}, set(selected))
-            self.assertEqual({item[2] for item in started}, {1})
+            self.assertEqual({item[2] for item in started}, {server.PREVIEW_BATCH_SIZES[0]})
         finally:
             release.set()
             consumer.join(2)
         self.assertFalse(consumer.is_alive())
         self.assertEqual(events[-1]["type"], "complete")
 
-    def test_stream_round_grows_from_one_to_two_to_four_then_ten(self):
-        schedule = (
-            (0, 0, 0, 1),
-            (1, 1, 1, 2),
-            (2, 3, 2, 4),
-            (3, 7, 4, server.BATCH_SIZE),
-        )
-        for rounds, fetched, previous_count, expected_size in schedule:
-            with self.subTest(rounds=rounds):
-                session = server.SearchSession("light", ["met"])
-                session.source_states["met"].update(
-                    fetched=fetched,
-                    rounds=rounds,
-                    last_batch_count=previous_count,
-                )
-                calls = []
-
-                def batch_search(
-                    source_name, query, offset, batch_size, cancelled=None,
-                    resolve_dimensions=True,
-                ):
-                    calls.append((offset, batch_size))
-                    return {
-                        "source": source_name, "results": [], "error": "",
-                        "offset": offset, "count": 0, "exhausted": True,
-                    }
-
-                list(server.stream_search_round(session, batch_search))
-                self.assertEqual(calls, [(fetched, expected_size)])
-
-    def test_stream_shows_metadata_before_dimension_and_model_enrichment(self):
+    def test_stream_round_completes_ten_image_decision_windows(self):
         session = server.SearchSession("light", ["met"])
-        item = server.normalize_result(result(
-            "met", "Immediate", "fast", width=0, height=0,
-        ))
-        enrichment_started = threading.Event()
-        release_enrichment = threading.Event()
-        original_enrichment = server.score_search_results
-
-        def batch_search(
-            source_name, query, offset, batch_size, cancelled=None,
-            resolve_dimensions=True,
-        ):
-            self.assertFalse(resolve_dimensions)
-            return {
-                "source": source_name, "results": [item], "error": "",
-                "offset": offset, "count": 1, "exhausted": False,
-            }
-
-        def blocked_enrichment(query, items):
-            enrichment_started.set()
-            release_enrichment.wait(2)
-            return items
-
-        server.score_search_results = blocked_enrichment
-        events = server.stream_search_round(session, batch_search)
-        try:
-            first = next(events)
-            self.assertEqual(first["type"], "snapshot")
-            self.assertEqual(first["snapshot"]["results"][0]["title"], "Immediate")
-            self.assertTrue(enrichment_started.wait(1))
-            self.assertFalse(release_enrichment.is_set())
-        finally:
-            release_enrichment.set()
-            events.close()
-            server.score_search_results = original_enrichment
-
-    def test_fast_collection_advances_without_waiting_for_slow_collection(self):
-        session = server.SearchSession("light", ["met", "nga"])
-        release_slow = threading.Event()
-        fast_finished = threading.Event()
-        fast_batch_sizes = []
-
-        def batch_search(
-            source_name, query, offset, batch_size, cancelled=None,
-            resolve_dimensions=True,
-        ):
-            if source_name == "met":
-                release_slow.wait(2)
-                return {
-                    "source": source_name, "results": [], "error": "",
-                    "offset": offset, "count": 0, "exhausted": True,
-                }
-            fast_batch_sizes.append(batch_size)
-            exhausted = len(fast_batch_sizes) == 4
-            if exhausted:
-                fast_finished.set()
-            return {
-                "source": source_name, "results": [], "error": "",
-                "offset": offset, "count": batch_size, "exhausted": exhausted,
-            }
-
-        events = []
-        consumer = threading.Thread(
-            target=lambda: events.extend(server.stream_search_round(session, batch_search)),
-        )
-        consumer.start()
-        try:
-            self.assertTrue(fast_finished.wait(1))
-            self.assertEqual(fast_batch_sizes, [1, 2, 4, server.BATCH_SIZE])
-            self.assertTrue(consumer.is_alive())
-        finally:
-            release_slow.set()
-            consumer.join(2)
-        self.assertFalse(consumer.is_alive())
+        calls = []
+        def fetch(name, query, offset, count, **kwargs):
+            calls.append((offset, count))
+            items = [server.normalize_result(result(name, f"Result {i}", str(i)), i)
+                     for i in range(offset, offset+count)]
+            return dict(source=name, offset=offset, count=count, results=items,
+                        exhausted=len(calls) == 3, error="")
+        def prepare(query, items):
+            return items, ({}, {}, {})
+        def score(query, prepared):
+            for item in prepared[0]:
+                item.update(pamela_score=.8, pamela_rerank=True)
+            return prepared[0]
+        with patch.object(server, "prepare_search_results", prepare), patch.object(
+            server, "finish_search_results", score,
+        ), patch.object(server, "PREVIEW_BATCH_SIZES", (1, 9)):
+            events = list(server.stream_search_round(session, fetch))
+        self.assertEqual(calls, [(0, 1), (1, 9), (10, 10)])
+        self.assertEqual(events[-1]["type"], "complete")
 
     def test_identical_live_batches_are_coalesced_and_cached(self):
         original = sources.ADAPTERS["met"]
@@ -3422,15 +3403,17 @@ class SimilarityTests(unittest.TestCase):
     def test_siglip_download_retries_original_after_thumbnail_failure(self):
         original = semantic_embeddings._download_image
         calls = []
+        from PIL import Image
+        original_image = Image.new("RGB", (8, 8), "red")
         semantic_embeddings._download_image = lambda url: calls.append(url) or (
-            "image" if url.endswith("original.jpg") else None
+            original_image if url.endswith("original.jpg") else None
         )
         try:
             image = semantic_embeddings._download_item_image({
                 "thumb_url": "https://i0.wp.com/preview.jpg",
                 "image_url": "https://gnosisvn.org/original.jpg",
             })
-            self.assertEqual(image, "image")
+            self.assertIs(image, original_image)
             self.assertEqual(calls, [
                 "https://i0.wp.com/preview.jpg",
                 "https://gnosisvn.org/original.jpg",

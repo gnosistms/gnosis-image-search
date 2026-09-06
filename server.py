@@ -7,7 +7,6 @@ import argparse
 import concurrent.futures
 import copy
 import hashlib
-import http.cookies
 import json
 import mimetypes
 import os
@@ -27,12 +26,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Mapping
 
+# The coordinator imports server for injectable worker functions. Running this
+# file as a script must not create a second set of catalogs and worker limits.
+if __name__ == "__main__":
+    sys.modules.setdefault("server", sys.modules[__name__])
+
 
 HERE = Path(__file__).resolve().parent
 WEB_DIR = HERE / "web"
 STATIC_FILES = frozenset((
     "app.js", "styles.css", "beauty.js", "beauty.css",
-    "full-size-image-url.js", "search-term-highlight.js", "all-terms-filter.js",
+    "full-size-image-url.js", "search-term-highlight.js", "all-terms-filter.js", "search-progress.js",
     "google-helper.js", "google-ranking.js", "google-helper.css",
     "gnosis-caduceus.svg",
     "images/getty/annunciation-1390.jpg",
@@ -58,9 +62,13 @@ from google_image_search import (  # noqa: E402
     GoogleImageSearchError, GoogleVerificationRequired, SOURCE_DOMAINS,
     search_google_stage,
 )
+import harvard_images
+from harvard_images import (ImageProxyError, HARVARD_PROXY_HOST, HARVARD_PAGE_HOSTS,
+                            harvard_cdn_url, harvard_cookie, image_mime_type)
 from image_dimensions import resolve_result_dimensions  # noqa: E402
 from ranker import rank_result_groups, rank_results  # noqa: E402
-from semantic_embeddings import add_semantic_scores, image_similarity  # noqa: E402
+from semantic_embeddings import (add_semantic_scores, image_similarity,
+                                 prepare_image_vectors, encode_prepared_images)  # noqa: E402
 from pamela_ranker import add_pamela_scores  # noqa: E402
 from relevance_terms import (  # noqa: E402
     STOPWORDS as EVIDENCE_STOPWORDS,
@@ -106,7 +114,7 @@ BATCH_SIZE = 10
 EXACT_CANDIDATE_MULTIPLIER = 20
 EXACT_MIN_CANDIDATES = 40
 EXACT_MAX_CANDIDATES = 400
-PREVIEW_BATCH_SIZES = (1, 2, 4)
+PREVIEW_BATCH_SIZES = (1, 9) if os.environ.get("SEARCH_INITIAL_BATCH", "10") == "1+9" else (10,)
 AGGREGATE_QUALITY_WINDOW = 50
 SOURCE_CONCURRENCY = max(
     1, int(os.environ.get("SEARCH_SOURCE_CONCURRENCY", str(len(SOURCE_LABELS)))),
@@ -128,16 +136,6 @@ AIC_PROXY_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 )
-HARVARD_PROXY_HOST = "nrs.harvard.edu"
-HARVARD_CDN_HOST = "images.harvardartmuseums.org"
-HARVARD_PAGE_HOSTS = frozenset((
-    "harvardartmuseums.org", "www.harvardartmuseums.org",
-))
-HARVARD_PROXY_MAX_BYTES = 32 * 1024 * 1024
-HARVARD_PROXY_CONCURRENCY = threading.BoundedSemaphore(4)
-HARVARD_COOKIE_LOCK = threading.Lock()
-HARVARD_COOKIE_HEADER = ""
-HARVARD_COOKIE_EXPIRES = 0.0
 HIGH_RES_CACHE_DIR = DATA_DIR / "high-res-image-cache"
 HIGH_RES_CACHE_LIMIT = 5
 HIGH_RES_CACHE_MAX_BYTES = 64 * 1024 * 1024
@@ -241,10 +239,6 @@ sources.ADAPTERS["universal_comasonry"] = universal_comasonry
 
 
 class InputError(ValueError):
-    pass
-
-
-class ImageProxyError(RuntimeError):
     pass
 
 
@@ -580,7 +574,15 @@ def normalize_result(item: dict, provider_rank: int = 0, query: str = "") -> dic
     # The preview is a doorway to the collection record, where the complete
     # description and rights context live. Keep the direct original as a
     # separate capability so the desktop app can offer an explicit download.
-    preview_click_url = page_url or full_resolution_url or image_url
+    # WordPress media `link` values are attachment permalinks, not reliable
+    # usage pages. On Gnosis VN, orphan attachments redirect to the homepage
+    # and attached records point to only one historical parent. The original
+    # media file is the only dependable destination for this collection.
+    opens_original_image = source_name == "gnosis" and bool(image_url)
+    preview_click_url = (
+        image_url if opens_original_image
+        else page_url or full_resolution_url or image_url
+    )
     download_url = "" if requires_source_visit else image_url
     normalized = {
         "source": source_name,
@@ -607,7 +609,9 @@ def normalize_result(item: dict, provider_rank: int = 0, query: str = "") -> dic
         "full_resolution_url": full_resolution_url,
         "download_url": download_url,
         "preview_click_url": preview_click_url,
-        "preview_click_action": "visit_website",
+        "preview_click_action": (
+            "open_original_image" if opens_original_image else "visit_website"
+        ),
         "preview_width": int(item.get("preview_width") or 0),
         "preview_height": int(item.get("preview_height") or 0),
         "width": int(item.get("width") or 0),
@@ -694,9 +698,12 @@ def search_batch(
     cancelled: Callable[[], bool] | None = None,
     resolve_dimensions: bool = True,
     exact_phrases: tuple[str, ...] = (),
+    cursor=None,
 ) -> dict:
     """Fetch a growing provider window and return only its next slice."""
     def check_cancelled():
+        from search_runtime import check_work
+        check_work()
         if cancelled is not None and cancelled():
             raise SearchCancelled("Search was superseded by a newer request.")
 
@@ -749,9 +756,19 @@ def search_batch(
                 EXACT_MAX_CANDIDATES,
                 max(EXACT_MIN_CANDIDATES, batch_size * EXACT_CANDIDATE_MULTIPLIER),
             )
-        raw = fetch_exact_candidates(
-            source_name, adapter, query, candidate_limit, exact_phrases,
-        )
+        def fetch_candidates(need):
+            from search_runtime import failed_requests, check_work, request_failure_reason
+            raw = fetch_exact_candidates(source_name, adapter, query, need, exact_phrases)
+            check_work()
+            if not raw and failed_requests():
+                raise RuntimeError(request_failure_reason())
+            return raw
+        if cursor is not None and not exact_phrases and source_name == "cleveland" and adapter is sources.cleveland:
+            raw = cursor.fetch_pages(candidate_limit, lambda offset, limit:
+                                     sources.cleveland_page(query, offset, limit))
+        else:
+            raw = (cursor.fetch(candidate_limit, fetch_candidates) if cursor is not None
+                   else fetch_candidates(candidate_limit))
         check_cancelled()
         verified = raw
         if exact_phrases:
@@ -759,6 +776,14 @@ def search_batch(
                 item for item in raw
                 if result_matches_exact_phrases(item, exact_phrases)
             ]
+            # A page of rejected candidates is not a completed image batch.
+            # Expand here so the coordinator never retries the same empty page.
+            while len(verified) < requested and len(raw) >= candidate_limit and candidate_limit < EXACT_MAX_CANDIDATES:
+                check_cancelled()
+                candidate_limit = min(EXACT_MAX_CANDIDATES, candidate_limit * 2)
+                raw = (cursor.fetch(candidate_limit, fetch_candidates) if cursor is not None
+                       else fetch_candidates(candidate_limit))
+                verified = [item for item in raw if result_matches_exact_phrases(item, exact_phrases)]
         window = list(verified[offset:requested])
         if resolve_dimensions:
             window = resolve_result_dimensions(window)
@@ -816,176 +841,29 @@ def search_batch(
                 cache_event.set()
 
 
-def score_search_results(query: str, items: list[dict]) -> list[dict]:
-    """Enrich a copy of visible results without delaying their first display."""
+def prepare_search_results(query: str, items: list[dict]):
     enriched = resolve_result_dimensions(copy.deepcopy(items))
-    add_semantic_scores(query, enriched)
-    add_pamela_scores(enriched)
+    return enriched, prepare_image_vectors(enriched)
+
+
+def finish_search_results(query: str, prepared):
+    enriched, prepared_vectors = prepared
+    vectors = encode_prepared_images(prepared_vectors)
+    add_semantic_scores(query, enriched, vectors=vectors)
+    add_pamela_scores(enriched, vectors=vectors)
     for item in enriched:
         item["pamela_rerank"] = True
+        item["scoring_complete"] = True
     return enriched
 
 
-def stream_search_round(
-    session: "SearchSession",
-    batch_search: Callable = search_batch,
-):
-    """Stream independent per-collection pipelines plus background enrichment."""
-    stream_token, stream_sources = session.begin_stream()
-    if not stream_sources:
-        yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
-        return
-    search_executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=len(stream_sources),
-    )
-    enrichment_executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=min(4, len(stream_sources)),
-    )
-    work = {}
+def score_search_results(query: str, items: list[dict]) -> list[dict]:
+    return finish_search_results(query, prepare_search_results(query, items))
 
-    def submit_search(source_name: str):
-        policy = session.continuation_policy()[source_name]
-        if (not policy["continue"]
-                or session.source_cancelled(source_name, stream_token)):
-            return
-        state = session.source_states[source_name]
-        batch_size = (
-            PREVIEW_BATCH_SIZES[state["rounds"]]
-            if state["rounds"] < len(PREVIEW_BATCH_SIZES)
-            else BATCH_SIZE
-        )
-        search_kwargs = {
-            # Once a provider request is under way, let that one batch finish
-            # even if the user hides the provider. Its results remain cached
-            # in the session but the selected-source ranking keeps them out of
-            # the visible snapshot.
-            "cancelled": lambda name=source_name: session.batch_cancelled(name),
-            "resolve_dimensions": False,
-        }
-        if session.exact_phrases:
-            search_kwargs["exact_phrases"] = session.exact_phrases
-        future = search_executor.submit(
-            batch_search,
-            source_name,
-            session.retrieval_query,
-            policy["fetched"],
-            batch_size,
-            **search_kwargs,
-        )
-        work[future] = {
-            "kind": "search",
-            "source": source_name,
-            "offset": policy["fetched"],
-            "started": time.monotonic(),
-        }
 
-    def submit_enrichment(items: list[dict]):
-        if not items:
-            return
-        future = enrichment_executor.submit(score_search_results, session.query, items)
-        work[future] = {"kind": "enrichment", "started": time.monotonic()}
-
-    for source_name in stream_sources:
-        submit_search(source_name)
-
-    try:
-        while work and not session.cancelled:
-            now = time.monotonic()
-            search_deadlines = [
-                details["started"] + SOURCE_BATCH_TIMEOUT_SECONDS
-                for details in work.values() if details["kind"] == "search"
-            ]
-            timeout = max(0.0, min(search_deadlines) - now) if search_deadlines else None
-            completed, _pending = concurrent.futures.wait(
-                set(work),
-                timeout=timeout,
-                return_when=concurrent.futures.FIRST_COMPLETED,
-            )
-            if not completed:
-                overdue = [
-                    future for future, details in work.items()
-                    if details["kind"] == "search"
-                    and now - details["started"] >= SOURCE_BATCH_TIMEOUT_SECONDS
-                ]
-                for future in overdue:
-                    details = work.pop(future)
-                    source_name = details["source"]
-                    group = {
-                        "source": source_name,
-                        "results": [],
-                        "count": 0,
-                        "offset": details["offset"],
-                        "exhausted": True,
-                        "error": (
-                            f"TimeoutError: collection search exceeded "
-                            f"{SOURCE_BATCH_TIMEOUT_SECONDS} seconds"
-                        ),
-                    }
-                    try:
-                        snapshot = session.merge_batch(
-                            group, coalesce_ranking=False, score_results=False,
-                            stream_token=stream_token,
-                        )
-                    except SearchCancelled:
-                        continue
-                    session.cancel_source(source_name)
-                    future.cancel()
-                    yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
-                continue
-
-            for future in completed:
-                details = work.pop(future)
-                if details["kind"] == "enrichment":
-                    try:
-                        scored_items = future.result()
-                    except Exception:
-                        continue
-                    if not session.cancelled:
-                        yield {
-                            "type": "rerank",
-                            "snapshot": session.merge_scored_results(scored_items),
-                        }
-                    continue
-
-                source_name = details["source"]
-                try:
-                    group = future.result()
-                    snapshot = session.merge_batch(
-                        group, coalesce_ranking=False, score_results=False,
-                        stream_token=stream_token,
-                        retain_superseded_batch=True,
-                    )
-                except SearchCancelled:
-                    continue
-                except Exception as exc:
-                    group = {
-                        "source": source_name,
-                        "results": [],
-                        "count": 0,
-                        "offset": details["offset"],
-                        "exhausted": True,
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-                    try:
-                        snapshot = session.merge_batch(
-                            group, coalesce_ranking=False, score_results=False,
-                            stream_token=stream_token,
-                            retain_superseded_batch=True,
-                        )
-                    except SearchCancelled:
-                        continue
-
-                # Start this collection's next retrieval before yielding or
-                # beginning its slower dimension/model enrichment.
-                submit_search(source_name)
-                submit_enrichment(group["results"])
-                yield {"type": "snapshot", "source": source_name, "snapshot": snapshot}
-
-        if not session.cancelled and session.stream_current(stream_token):
-            yield {"type": "complete", "snapshot": session.snapshot(force_rank=True)}
-    finally:
-        search_executor.shutdown(wait=False, cancel_futures=True)
-        enrichment_executor.shutdown(wait=False, cancel_futures=True)
+def stream_search_round(session, batch_search=None):
+    from search_pipeline import stream_session
+    yield from stream_session(session, batch_search or search_batch)
 
 
 class SearchSession:
@@ -1005,6 +883,7 @@ class SearchSession:
         self.selected_sources = tuple(selected_sources)
         self.ranking_mode = "pamela"
         self.created_at = time.time()
+        self.created_monotonic = time.monotonic()
         self.results: dict[str, dict] = {}
         self.all_results: dict[str, dict] = {}
         self.families: dict[str, list[dict]] = {}
@@ -1026,9 +905,28 @@ class SearchSession:
         self.stream_generation = 0
         self.rank_dirty = False
         self.dirty_batches = 0
+        self.data_revision = 0
+        self.ranked_data_revision = -1
+        self.async_ranking = False
+        self.stream_running = False
+        self.lifecycle = "idle"
+        self.quality_positions = {}
+        self.pending_features = set()
+        self.feature_evidence = {}
+        self.provider_cursors = {}
+        self.last_progress = time.monotonic()
+        from search_runtime import SearchTrace
+        self.trace = SearchTrace(self.id)
+
+    def touch(self):
+        self.rank_dirty = True
+        self.data_revision += 1
+        self.last_progress = time.monotonic()
 
     def cancel(self):
         self.cancel_event.set()
+        self.lifecycle = "cancelled"
+        self.trace.event("cancelled")
 
     def cancel_source(self, source_name: str):
         self.source_cancel_events[source_name].set()
@@ -1068,7 +966,10 @@ class SearchSession:
         with self.lock:
             previous = set(self.selected_sources)
             active = set(selected)
-            self.stream_generation += 1
+            if not self.async_ranking:
+                self.stream_generation += 1
+            if self.lifecycle == "complete":
+                self.lifecycle = "idle"
             for name in active:
                 if name not in self.source_states:
                     self.source_states[name] = {
@@ -1080,7 +981,7 @@ class SearchSession:
                 elif name not in previous:
                     self.source_cancel_events[name].clear()
             self.selected_sources = selected
-            self.rank_dirty = True
+            self.touch()
             self.dirty_batches += 1
             self._rerank_locked(force=True)
             return self.snapshot()
@@ -1090,7 +991,7 @@ class SearchSession:
         return self.cancel_event.is_set()
 
     def _rerank_locked(self, force: bool = False):
-        if not self.rank_dirty:
+        if not self.rank_dirty or self.async_ranking:
             return
         if not force and self.revision and self.dirty_batches < RANK_AFTER_DIRTY_BATCHES:
             return
@@ -1099,9 +1000,6 @@ class SearchSession:
                 item for item in self.all_results.values()
                 if item.get("source") in self.selected_sources
             ],
-            same_image=lambda first, second: likely_same_image(
-                first, second, image_similarity(first, second)
-            ),
         )
         self.results = {item["id"]: item for item in ranked}
         self.families = families
@@ -1148,6 +1046,7 @@ class SearchSession:
             for item in incoming:
                 self.all_results[item["id"]] = item
             state["last_ids"] = [item["id"] for item in incoming]
+            state["scoring_done"] = score_results
             state["last_batch_count"] = int(group.get("count") or 0)
             if (state["fetched"] == 0 and state["last_batch_count"] == 0
                     and not group.get("error")):
@@ -1161,11 +1060,11 @@ class SearchSession:
             state["exhausted"] = bool(group.get("exhausted"))
             if group.get("error"):
                 self.source_errors[group["source"]] = group["error"]
-                state["stop_reason"] = "source unavailable"
+                state["stop_reason"] = str(group["error"]).removeprefix("RuntimeError: ")
             if group.get("alert"):
                 self.source_alerts[group["source"]] = dict(group["alert"])
             if incoming:
-                self.rank_dirty = True
+                self.touch()
                 self.dirty_batches += 1
             self._rerank_locked(force=not coalesce_ranking)
             return self.snapshot()
@@ -1180,7 +1079,7 @@ class SearchSession:
                     self.all_results[item_id] = item
                     changed = True
             if changed:
-                self.rank_dirty = True
+                self.touch()
                 self.dirty_batches += 1
                 self._rerank_locked(force=True)
             return self.snapshot()
@@ -1219,6 +1118,9 @@ class SearchSession:
         return {"id": item_id, "alternates": alternates, "results": similar}
 
     def continuation_policy(self) -> dict:
+        if self.async_ranking:
+            from search_pipeline import continuation_policy
+            return continuation_policy(self)
         with self.lock:
             positions = {item_id: index + 1 for index, item_id in enumerate(self.results)}
             policy = {}
@@ -1244,7 +1146,7 @@ class SearchSession:
                 elif (self.exact_phrases
                       and state["rounds"] <= len(PREVIEW_BATCH_SIZES)):
                     should_continue, reason = True, "expanding exact-match candidates"
-                elif (state["rounds"] <= len(PREVIEW_BATCH_SIZES)
+                elif (state["fetched"] < 10 and state["rounds"] <= len(PREVIEW_BATCH_SIZES)
                       and state["last_batch_count"]
                       == PREVIEW_BATCH_SIZES[state["rounds"] - 1]):
                     should_continue, reason = True, "progressive preview batch complete"
@@ -1270,6 +1172,10 @@ class SearchSession:
             self._rerank_locked(force=force_rank)
             return {
                 "session_id": self.id,
+                "lifecycle": self.lifecycle,
+                "stream_running": self.stream_running,
+                "progress_age_seconds": round(time.monotonic() - self.last_progress, 1),
+                "metrics": self.trace.snapshot(),
                 "query": self.query,
                 "exact_active": bool(self.exact_phrases),
                 "exact_requested": self.exact_requested,
@@ -1376,69 +1282,6 @@ def get_cacheable_detail_item(session_id: str, item_id: str) -> dict:
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise InputError("The full image URL is invalid.")
     return item
-
-
-def harvard_cdn_url(image_url: str) -> str:
-    """Translate Harvard's API IIIF URL to its signed official image CDN."""
-    parsed = urllib.parse.urlparse(image_url)
-    if parsed.scheme != "https" or parsed.hostname != HARVARD_PROXY_HOST:
-        raise ImageProxyError("The Harvard image host is not allowed.")
-    base, marker, operation = parsed.path.partition("/full/")
-    if (not marker or not base.lower().startswith("/urn-3:huam:")
-            or base.endswith(":IMAGE")):
-        raise ImageProxyError("The Harvard image URL is invalid.")
-    path = f"{base}:IMAGE/full/{operation}"
-    return urllib.parse.urlunparse((
-        "https", HARVARD_CDN_HOST, path, "", parsed.query, "",
-    ))
-
-
-def _refresh_harvard_cookie(page_url: str) -> str:
-    global HARVARD_COOKIE_HEADER, HARVARD_COOKIE_EXPIRES
-    request = urllib.request.Request(page_url, headers={
-        "User-Agent": AIC_PROXY_UA,
-        "Accept": "text/html,application/xhtml+xml",
-    })
-    with urllib.request.urlopen(request, timeout=30) as response:
-        set_cookies = response.headers.get_all("Set-Cookie") or []
-    values = {}
-    for header in set_cookies:
-        cookie = http.cookies.SimpleCookie()
-        cookie.load(header)
-        for name in (
-            "CloudFront-Policy", "CloudFront-Signature", "CloudFront-Key-Pair-Id",
-        ):
-            if name in cookie:
-                values[name] = cookie[name].value
-    if len(values) != 3:
-        raise ImageProxyError("Harvard did not grant temporary image access.")
-    HARVARD_COOKIE_HEADER = "; ".join(
-        f"{name}={values[name]}" for name in (
-            "CloudFront-Policy", "CloudFront-Signature", "CloudFront-Key-Pair-Id",
-        )
-    )
-    HARVARD_COOKIE_EXPIRES = time.time() + 50 * 60
-    return HARVARD_COOKIE_HEADER
-
-
-def harvard_cookie(page_url: str, force: bool = False) -> str:
-    with HARVARD_COOKIE_LOCK:
-        if (not force and HARVARD_COOKIE_HEADER
-                and time.time() < HARVARD_COOKIE_EXPIRES):
-            return HARVARD_COOKIE_HEADER
-        return _refresh_harvard_cookie(page_url)
-
-
-def image_mime_type(data: bytes) -> str:
-    if data.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if data.startswith((b"GIF87a", b"GIF89a")):
-        return "image/gif"
-    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
-        return "image/webp"
-    raise ImageProxyError("The mirror did not return a supported image.")
 
 
 IMAGE_CACHE_EXTENSIONS = {
@@ -1556,37 +1399,8 @@ def cached_high_res_image(
             event.set()
 
 
-def fetch_harvard_preview(
-    item: dict, detail: bool = False, attempts: int = 4,
-) -> tuple[bytes, str]:
-    """Fetch a Harvard CDN image, recovering from transient rate limits."""
-    source_url = str(item.get("image_url" if detail else "thumb_url") or "")
-    cdn_url = harvard_cdn_url(source_url)
-    page_url = str(item.get("page_url") or "")
-    last_error = None
-    with HARVARD_PROXY_CONCURRENCY:
-        for attempt in range(attempts):
-            try:
-                request = urllib.request.Request(cdn_url, headers={
-                    "User-Agent": AIC_PROXY_UA,
-                    "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8",
-                    # Refresh once after the first image failure. Further
-                    # retries reuse that fresh cookie instead of adding more
-                    # load to Harvard's object page while it is rate-limiting.
-                    "Cookie": harvard_cookie(page_url, force=attempt == 1),
-                    "Referer": page_url,
-                })
-                with urllib.request.urlopen(request, timeout=30) as response:
-                    data = response.read(HARVARD_PROXY_MAX_BYTES + 1)
-                if len(data) > HARVARD_PROXY_MAX_BYTES:
-                    raise ImageProxyError("The Harvard preview exceeds the size limit.")
-                return data, image_mime_type(data)
-            except (OSError, urllib.error.URLError, urllib.error.HTTPError,
-                    ImageProxyError) as exc:
-                last_error = exc
-                if attempt + 1 < attempts:
-                    time.sleep(min(0.5 * (2 ** attempt), 2.0))
-    raise ImageProxyError("The Harvard preview is unavailable.") from last_error
+def fetch_harvard_preview(item: dict, detail: bool = False, attempts: int = 4):
+    return harvard_images.fetch_harvard_preview(item, detail, attempts, cookie_provider=harvard_cookie)
 
 
 def fetch_aic_preview(image_url: str, attempts: int = 3) -> tuple[bytes, str]:
@@ -1782,7 +1596,12 @@ class SearchHandler(BaseHTTPRequestHandler):
                 self.send_ndjson(stream_search_round(session))
             elif url.path == "/api/search/policy":
                 session = get_session((params.get("session") or [""])[0])
-                self.send_json(200, session.snapshot(force_rank=True))
+                self.send_json(200, session.snapshot())
+            elif url.path == "/api/search/retry":
+                from search_pipeline import retry_sources
+                session = get_session((params.get("session") or [""])[0])
+                names = (params.get("sources") or [""])[0].split(",")
+                self.send_json(200, retry_sources(session, names))
             elif url.path == "/api/search/cancel":
                 session = get_session((params.get("session") or [""])[0])
                 session.cancel()

@@ -127,6 +127,15 @@ def dedupe_keys(item: dict) -> list[tuple[str, ...]]:
     artist = fold(item.get("artist", ""))
     if title and (artist or len(tokens(title)) >= 6):
         keys.append(("work", title, artist, fold(item.get("date", ""))))
+    # WordPress can retain an older attachment after an article switches to a
+    # higher-resolution re-upload.  Those records often contain exactly the
+    # same artist/title words in a different filename-like order (for example,
+    # "Temptation of Christ - Ary Scheffer" versus
+    # "Ary-Scheffer-Temptation-of-Christ").  Group that narrow case without
+    # trusting dates, which may also have been corrected on the replacement.
+    title_tokens = tokens(title)
+    if source == "gnosis" and artist and len(title_tokens) >= 3:
+        keys.append(("gnosis-title-words", artist, *sorted(title_tokens)))
     # Gnosis records for an original, rescan, and Topaz/upscaled derivative
     # often have different filenames but retain the same curated description.
     description = fold(item.get("description", ""))

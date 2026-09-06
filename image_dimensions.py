@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from search_runtime import (check_work, network_timeout, pause, count, note_failure, WorkExpired, submit)
+
 import threading
 import urllib.request
 from collections import OrderedDict
@@ -33,7 +35,7 @@ def inspect_remote_dimensions(url: str) -> tuple[int, int]:
         })
         parser = ImageFile.Parser()
         read = 0
-        with urllib.request.urlopen(request, timeout=8) as response:
+        with urllib.request.urlopen(request, timeout=network_timeout(8)) as response:
             while read < HEADER_LIMIT and parser.image is None:
                 chunk = response.read(min(32 * 1024, HEADER_LIMIT - read))
                 if not chunk:
@@ -58,7 +60,7 @@ def resolve_result_dimensions(items: list[dict]) -> list[dict]:
     if unresolved:
         with ThreadPoolExecutor(max_workers=min(8, len(unresolved))) as pool:
             futures = {
-                pool.submit(inspect_remote_dimensions,
+                submit(pool, inspect_remote_dimensions,
                             item.get("image_url") or item.get("thumb_url")): item
                 for item in unresolved
             }

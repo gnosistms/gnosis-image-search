@@ -8,6 +8,7 @@ import threading
 import urllib.request
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from search_runtime import count, network_timeout, check_work
 
 
 try:
@@ -29,6 +30,28 @@ MAX_FEATURES = 512
 MAX_PERCEPTUAL_CANDIDATES = 24
 FEATURE_CACHE: OrderedDict[str, dict | None] = OrderedDict()
 FEATURE_LOCK = threading.RLock()
+FEATURE_INFLIGHT = {}
+
+
+def remember_image_feature(item, image):
+    feature = compute_feature(image)
+    with FEATURE_LOCK:
+        for field in ("thumb_url", "image_url"):
+            if item.get(field):
+                FEATURE_CACHE[item[field]] = feature
+        while len(FEATURE_CACHE) > MAX_FEATURES:
+            FEATURE_CACHE.popitem(last=False)
+
+
+def cached_item_feature(item):
+    """Return (attempt complete, feature); pending is distinct from failure."""
+    urls = list(dict.fromkeys(item.get(field) for field in ("thumb_url", "image_url")
+                             if item.get(field)))
+    with FEATURE_LOCK:
+        for url in urls:
+            if FEATURE_CACHE.get(url) is not None:
+                return True, FEATURE_CACHE[url]
+        return all(url in FEATURE_CACHE for url in urls), None
 
 
 def _normalize(vector):
@@ -68,14 +91,23 @@ def feature_similarity(first: dict, second: dict) -> float:
 def _download_feature(url: str) -> dict | None:
     if not url or Image is None or np is None:
         return None
-    with FEATURE_LOCK:
-        if url in FEATURE_CACHE:
-            FEATURE_CACHE.move_to_end(url)
-            return FEATURE_CACHE[url]
+    while True:
+        check_work()
+        with FEATURE_LOCK:
+            if url in FEATURE_CACHE:
+                FEATURE_CACHE.move_to_end(url)
+                return FEATURE_CACHE[url]
+            pending = FEATURE_INFLIGHT.get(url)
+            if pending is None:
+                pending = FEATURE_INFLIGHT[url] = threading.Event()
+                break
+        pending.wait(.1)
     try:
         request = urllib.request.Request(url, headers={"User-Agent": UA})
-        with urllib.request.urlopen(request, timeout=8) as response:
+        count("feature_downloads")
+        with urllib.request.urlopen(request, timeout=network_timeout(8)) as response:
             data = response.read(MAX_IMAGE_BYTES + 1)
+        count("image_bytes", len(data))
         if len(data) > MAX_IMAGE_BYTES:
             raise ValueError("image exceeds similarity size limit")
         feature = compute_feature(Image.open(io.BytesIO(data)))
@@ -86,10 +118,21 @@ def _download_feature(url: str) -> dict | None:
         FEATURE_CACHE.move_to_end(url)
         while len(FEATURE_CACHE) > MAX_FEATURES:
             FEATURE_CACHE.popitem(last=False)
+        FEATURE_INFLIGHT.pop(url, None)
+        pending.set()
     return feature
 
 
 def _item_feature(item: dict) -> dict | None:
+    ready, feature = cached_item_feature(item)
+    if ready:
+        return feature
+    if item.get("source") == "harvard":
+        from semantic_embeddings import _download_item_image
+        image = _download_item_image(item)
+        if image is not None:
+            image.close()
+        return cached_item_feature(item)[1]
     for field in ("thumb_url", "image_url"):
         feature = _download_feature(str(item.get(field) or ""))
         if feature is not None:
@@ -116,7 +159,8 @@ def result_feature_similarity(first: dict, second: dict) -> float | None:
     return feature_similarity(first_feature, second_feature)
 
 
-def likely_same_image(first: dict, second: dict, semantic_similarity: float | None) -> bool:
+def likely_same_image(first: dict, second: dict, semantic_similarity: float | None,
+                      perceptual_similarity="download") -> bool:
     """Conservative family match for alternate scans, encodes, and upscales."""
     if semantic_similarity is None or semantic_similarity < 0.90:
         return False
@@ -125,7 +169,8 @@ def likely_same_image(first: dict, second: dict, semantic_similarity: float | No
     ratio_distance = abs(math.log(max(first_ratio, .05) / max(second_ratio, .05)))
     if ratio_distance > 0.20:
         return False
-    perceptual = result_feature_similarity(first, second)
+    perceptual = (result_feature_similarity(first, second)
+                  if perceptual_similarity == "download" else perceptual_similarity)
     if perceptual is None:
         return semantic_similarity >= 0.992 and ratio_distance < 0.08
     if semantic_similarity >= 0.98:

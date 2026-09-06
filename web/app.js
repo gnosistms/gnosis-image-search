@@ -20,6 +20,7 @@ const heroSourceCount = document.querySelector('#hero-source-count');
 const tileTemplate = document.querySelector('#tile-template');
 const detailPanel = document.querySelector('#detail-panel');
 const detailImageLink = document.querySelector('#detail-image-link');
+const detailVisitTooltipLabel = document.querySelector('#detail-visit-tooltip-label');
 const detailImage = document.querySelector('#detail-image');
 const detailImageSpinner = document.querySelector('#detail-image-spinner');
 const detailDimensionsOverlay = document.querySelector('#detail-dimensions-overlay');
@@ -86,18 +87,7 @@ function allTermsChanged() {
   setAllTerms(!allTermsRequested);
   if (!activeSearchQuery) return;
   renderGallery(resultsForSelectedSources(latestSnapshotResults));
-  const resultStatus = statusLine.querySelector('.status-results');
-  if (resultStatus) {
-    resultStatus.textContent = allTermsRequested
-      ? `${currentResults.length} all-term matches`
-      : activeSearchExact
-        ? `${currentResults.length} exact matches`
-        : `${currentResults.length} ranked images`;
-    statusLine.setAttribute(
-      'aria-label',
-      [...statusLine.children].map(element => element.textContent).join(' · '),
-    );
-  }
+  updateResultCount();
   if (!currentResults.length && !statusLine.classList.contains('is-searching')) {
     gallery.innerHTML = '<p class="notice">No matching images found.</p>';
   }
@@ -203,9 +193,19 @@ function setSourcePanelOpen(open) {
   heroToggleSources.setAttribute('aria-expanded', String(open));
 }
 
-function setPlainStatus(text) {
-  statusLine.removeAttribute('aria-label');
-  statusLine.textContent = text;
+function updateResultCount() {
+  statusLine.querySelector('.status-results').textContent = `${currentResults.length} images found`;
+}
+
+function setPlainStatus(text, reveal = true) {
+  updateResultCount();
+  document.querySelector('#search-progress-summary').textContent = text;
+  if (reveal) setActivityOpen(true);
+}
+
+function setActivityOpen(open) {
+  activityPanel.hidden = !open;
+  activityToggle.setAttribute('aria-expanded', String(open));
 }
 
 function setSearchBusy(busy) {
@@ -506,56 +506,104 @@ function renderGallery(items) {
   }
 }
 
+let progressSnapshot = null;
+let progressLastContact = Date.now();
+let streamDisconnected = false;
+const activityPanel = document.querySelector('#search-activity');
+const activityRows = document.querySelector('#search-activity-rows');
+const connectionStatus = document.querySelector('#search-connection');
+const reconnectSearch = document.querySelector('#reconnect-search');
+const activityToggle = document.querySelector('#toggle-search-activity');
+activityToggle.addEventListener('click', () => setActivityOpen(activityPanel.hidden));
+
+function refreshConnectionStatus() {
+  if (!progressSnapshot) return;
+  const progress = GnosisSearchProgress.describe(progressSnapshot, progressLastContact);
+  connectionStatus.textContent = streamDisconnected
+    ? 'Connection interrupted. Reconnect to continue watching this search.' : progress.connection;
+  reconnectSearch.hidden = !streamDisconnected && (!progress.running || Date.now() - progressLastContact <= 15000);
+}
+setInterval(refreshConnectionStatus, 1000);
+
+function renderSearchActivity(snapshot) {
+  progressSnapshot = snapshot;
+  progressLastContact = Date.now();
+  streamDisconnected = false;
+  refreshConnectionStatus();
+  activityRows.replaceChildren();
+  for (const [source, policy] of Object.entries(snapshot.source_policy || {})) {
+    if (policy.selected === false) continue;
+    const row = document.createElement('tr');
+    for (const value of [collectionLabel(source), policy.stage || '', policy.fetched || 0,
+      policy.scored || 0, `${Math.floor(policy.progress_age_seconds || 0)}s ago`, policy.reason || '']) {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.append(cell);
+    }
+    const actions = document.createElement('td');
+    if (policy.retryable) {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', () => resumeSearch(source));
+      actions.append(retry);
+    }
+    row.append(actions);
+    activityRows.append(row);
+  }
+}
+
+async function resumeSearch(source = '') {
+  if (!currentSession) return;
+  const sequence = ++currentSearchSequence;
+  abortSearchStreams();
+  setSearchBusy(true);
+  try {
+    const endpoint = source ? 'retry' : 'policy';
+    const snapshot = await getJson(`/api/search/${endpoint}?session=${encodeURIComponent(currentSession)}`
+      + (source ? `&sources=${encodeURIComponent(source)}` : ''));
+    applySnapshot(snapshot, sequence);
+    if (snapshot.lifecycle !== 'complete' && snapshot.lifecycle !== 'cancelled') {
+      await continueSessionSearch(sequence, currentSession);
+    }
+  } catch (error) {
+    if (sequence === currentSearchSequence) {
+      streamDisconnected = true;
+      refreshConnectionStatus();
+    }
+  } finally {
+    if (sequence === currentSearchSequence) setSearchBusy(false);
+  }
+}
+reconnectSearch.addEventListener('click', () => resumeSearch());
+
 function applySnapshot(snapshot, sequence) {
   if (sequence !== currentSearchSequence || snapshot.revision < currentRevision) return;
+  const changed = snapshot.revision !== currentRevision;
   currentRevision = snapshot.revision;
-  latestSnapshotResults = snapshot.results;
+  if (snapshot.results) latestSnapshotResults = snapshot.results;
+  renderSearchActivity(snapshot);
   showSourceAlerts(snapshot.source_alerts);
-  renderGallery(resultsForSelectedSources(latestSnapshotResults));
+  if (changed && snapshot.results) renderGallery(resultsForSelectedSources(latestSnapshotResults));
   if (selectedItemId) {
     const selected = currentResults.find(item => item.id === selectedItemId);
     if (selected) renderDetailMetadata(selected);
     else closeDetails();
   }
-  const unavailable = Object.keys(snapshot.source_errors);
-  const errors = unavailable.length;
-  const policies = Object.values(snapshot.source_policy || {})
-    .filter(policy => policy.selected !== false);
-  const active = policies.filter(policy => policy.continue).length;
-  const searched = policies.length - active;
+  const active = snapshot.stream_running || snapshot.lifecycle === "running";
   // An empty gallery only needs its spinner while at least one selected
   // provider still has work to do. In particular, a cached zero-result
   // provider is complete even though there are no tiles to make
   // renderGallery() clear the spinner for us.
   setGallerySearching(Boolean(active && !currentResults.length));
-  const resultText = allTermsRequested
-    ? `${currentResults.length} all-term matches`
-    : snapshot.exact_active
-      ? `${currentResults.length} exact matches`
-      : `${currentResults.length} ranked images`;
-  const progressText = policies.length
-    ? `${searched} of ${policies.length} collections searched`
+  updateResultCount();
+  const unavailable = Object.keys(snapshot.source_errors || {});
+  const progressText = GnosisSearchProgress.describe(snapshot).text;
+  const errorText = unavailable.length
+    ? `${unavailable.length} unavailable (${unavailable.map(collectionLabel).join(', ')})`
     : '';
-  const errorText = errors
-    ? `${errors} unavailable (${unavailable.map(collectionLabel).join(', ')})`
-    : '';
-  const resultStatus = document.createElement('span');
-  resultStatus.className = 'status-results';
-  resultStatus.textContent = resultText;
-  statusLine.replaceChildren(resultStatus);
-  if (progressText) {
-    const progressStatus = document.createElement('span');
-    progressStatus.className = 'status-progress';
-    progressStatus.textContent = progressText;
-    statusLine.append(progressStatus);
-  }
-  if (errorText) {
-    const errorStatus = document.createElement('span');
-    errorStatus.className = 'status-errors';
-    errorStatus.textContent = errorText;
-    statusLine.append(errorStatus);
-  }
-  statusLine.setAttribute('aria-label', [resultText, progressText, errorText].filter(Boolean).join(' · '));
+  document.querySelector('#search-progress-summary').textContent =
+    [progressText, errorText].filter(Boolean).join(' · ');
 }
 
 async function streamSearchRound(sequence, sessionId) {
@@ -600,20 +648,24 @@ async function streamSearchRound(sequence, sessionId) {
       }
     }
     return latestSnapshot;
+  } catch (error) {
+    if (sequence === currentSearchSequence && error.name !== 'AbortError') {
+      streamDisconnected = true;
+      refreshConnectionStatus();
+    }
+    throw error;
   } finally {
     searchControllers.delete(controller);
   }
 }
 
 async function continueSessionSearch(sequence, sessionId) {
-  let hasActiveSources = true;
-  while (hasActiveSources && sequence === currentSearchSequence) {
-    const snapshot = await streamSearchRound(sequence, sessionId);
-    if (!snapshot || sequence !== currentSearchSequence) return;
-    hasActiveSources = Object.values(snapshot.source_policy || {})
-      .some(policy => policy.selected !== false && policy.continue);
-  }
-  if (sequence === currentSearchSequence && currentResults.length === 0) {
+  const snapshot = await streamSearchRound(sequence, sessionId);
+  if (sequence !== currentSearchSequence) return;
+  if (snapshot?.stream_running) {
+    streamDisconnected = true;
+    refreshConnectionStatus();
+  } else if (currentResults.length === 0) {
     setGallerySearching(false);
     gallery.innerHTML = '<p class="notice">No matching images found.</p>';
   }
@@ -663,7 +715,7 @@ function providerSelectionChanged() {
     try {
       const snapshot = await updateSessionSources(sequence, sessionId, selected);
       if (!snapshot || changeRevision !== sourceSelectionRevision) return;
-      if (selected.some(source => snapshot.source_policy?.[source]?.continue)) {
+      if (snapshot.stream_running || snapshot.lifecycle === "idle" || selected.some(source => snapshot.source_policy?.[source]?.continue)) {
         await continueSessionSearch(sequence, sessionId);
       } else if (sequence === currentSearchSequence) {
         setGallerySearching(false);
@@ -706,6 +758,11 @@ async function runSearch(query) {
   currentResults = [];
   latestSnapshotResults = [];
   currentSession = '';
+  progressSnapshot = null;
+  setActivityOpen(false);
+  activityRows.replaceChildren();
+  connectionStatus.textContent = '';
+  reconnectSearch.hidden = true;
   activeSearchQuery = query;
   activeSearchExact = exactPhrasesRequested;
   currentRevision = -1;
@@ -717,7 +774,7 @@ async function runSearch(query) {
   setGallerySearching(true);
   emptyState.hidden = true;
   setSearchBusy(true);
-  setPlainStatus(`Searching ${selected.length} collections…`);
+  setPlainStatus(`Searching ${selected.length} collections…`, false);
 
   try {
     const start = await getJson(
@@ -799,7 +856,11 @@ async function openDetails(id, previewImage) {
   detailLicense.textContent = item.license;
   detailSize.textContent = '';
   detailImageLink.href = item.preview_click_url || item.page_url || item.image_url;
-  detailImageLink.setAttribute('aria-label', 'Open image website');
+  const previewLinkLabel = item.preview_click_action === 'open_original_image'
+    ? 'Open original image'
+    : 'Open image website';
+  detailImageLink.setAttribute('aria-label', previewLinkLabel);
+  detailVisitTooltipLabel.textContent = previewLinkLabel;
   detailDownloadOverlay.hidden = true;
   downloadFullImage.disabled = false;
   downloadFullImage.hidden = !item.download_url;

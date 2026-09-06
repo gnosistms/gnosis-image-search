@@ -42,7 +42,21 @@
     <div id="source-options" class="source-options"></div>
   </section>
 
-  <div id="search-status" class="search-status">Search public museum, archive, and Gnosis VN images</div>
+  <div id="search-status" class="search-status">
+    <span class="status-results">0 images found</span>
+    <button id="toggle-search-activity" type="button" aria-expanded="false" aria-controls="search-activity">Show detailed progress</button>
+  </div>
+  <section id="search-activity" class="search-activity" aria-label="Search activity" hidden>
+    <p id="search-progress-summary"></p>
+    <p id="search-connection" aria-live="polite"></p>
+    <button id="reconnect-search" type="button" hidden>Reconnect to this search</button>
+    <div class="search-activity-scroll">
+      <table>
+        <thead><tr><th>Collection</th><th>Activity</th><th>Fetched</th><th>Scored</th><th>Last progress</th><th>Details</th><th></th></tr></thead>
+        <tbody id="search-activity-rows"></tbody>
+      </table>
+    </div>
+  </section>
 
   <main id="content">
     <section id="empty-state" class="empty-state">
@@ -111,7 +125,7 @@
         <span id="detail-image-spinner" class="detail-image-spinner" aria-hidden="true" hidden></span>
         <span id="detail-dimensions-overlay" class="dimensions-overlay" hidden></span>
         <span class="visit-tooltip" aria-hidden="true">
-          <span>Open image website</span>
+          <span id="detail-visit-tooltip-label">Open image website</span>
           <svg viewBox="0 0 24 24">
             <path d="M15 3h6v6"/>
             <path d="M10 14 21 3"/>
@@ -203,6 +217,7 @@
   <script src="/full-size-image-url.js" defer></script>
   <script src="/search-term-highlight.js" defer></script>
   <script src="/all-terms-filter.js" defer></script>
+  <script src="/search-progress.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>
