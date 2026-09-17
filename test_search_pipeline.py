@@ -501,6 +501,19 @@ class RankingPreparationTests(unittest.TestCase):
         self.assertEqual(write.call_args.args[0],{"europeana":"test-eu","harvard":"test-harvard"})
         self.assertNotIn("test-harvard",output.getvalue())
 
+    def test_packaged_credentials_fail_without_harvard(self):
+        import contextlib, io, runpy, sys
+        import keys
+        package=runpy.run_path("scripts/package-europeana-key.py")
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(sys,"argv",["package",folder]), \
+             patch.object(keys,"get_key",side_effect=lambda n: {"europeana":"test-eu"}.get(n)), \
+             patch.object(keys,"write_encrypted") as write, contextlib.redirect_stderr(io.StringIO()) as errors:
+            with self.assertRaises(SystemExit):
+                package["main"]()
+        write.assert_not_called()
+        self.assertIn("Harvard key not found",errors.getvalue())
+
     def test_deadline_propagates_to_network_timeout(self):
         with work_context(WorkContext(time.monotonic()-.01)):
             with self.assertRaises(WorkExpired):

@@ -26,8 +26,11 @@ def main() -> int:
         )
     providers = {"europeana": europeana_key}
     harvard_key = keys.get_key("harvard") or keys.get_key("harvard_art_museums")
-    if harvard_key:
-        providers["harvard"] = harvard_key
+    if not harvard_key:
+        parser.error(
+            "Harvard key not found; set HARVARD_ART_MUSEUMS_API_KEY or SEARCH_KEYS_FILE"
+        )
+    providers["harvard"] = harvard_key
     keys.write_encrypted(providers, args.output_dir)
     print(f"Packaged encrypted credentials for {', '.join(providers)} in {args.output_dir}")
     return 0
