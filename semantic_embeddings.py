@@ -27,6 +27,10 @@ HERE = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("SEARCH_DATA_DIR") or HERE / "data").expanduser()
 CACHE_PATH = DATA_DIR / "image-embeddings.sqlite3"
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
+# SigLIP 2 was trained on text padded to 64 tokens. Its tokenizer config has no
+# usable model_max_length, so transformers 4.x (Intel Mac build) silently skips
+# padding unless the length is explicit. CLIP's config already specifies 77.
+TEXT_MAX_LENGTH = 64 if MODEL_KIND == "siglip" else None
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 Chrome/126.0 Safari/537.36")
 
@@ -357,7 +361,8 @@ def text_vector(query: str) -> np.ndarray | None:
             return cached
     with _MODEL_LOCK, _TORCH.inference_mode():
         inputs = _PROCESSOR(
-            text=[query], padding="max_length", truncation=True, return_tensors="pt",
+            text=[query], padding="max_length", truncation=True,
+            max_length=TEXT_MAX_LENGTH, return_tensors="pt",
         )
         inputs = {name: value.to(_DEVICE) for name, value in inputs.items()}
         encoded = _feature_tensor(_MODEL.get_text_features(**inputs)).float()
