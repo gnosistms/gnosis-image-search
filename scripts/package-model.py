@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 PROJECT = Path(__file__).resolve().parent.parent
-PROFILE_ID = "pamela-siglip2-base-v1"
+PROFILE_ID = "pamela-siglip2-base-v2"
 SOURCE = PROJECT / "build" / "bundled-models" / PROFILE_ID
 OUTPUT = PROJECT / "out" / "model"
 MAGIC = b"GNOSISMODEL1\n"
