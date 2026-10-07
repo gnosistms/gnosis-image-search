@@ -6,7 +6,7 @@ const http = require('node:http');
 const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
-const { backendEnvironment, packagedBackendExecutable } = require('./backend-runtime');
+const { MODEL_MISSING_EXIT_CODE, backendEnvironment, packagedBackendExecutable } = require('./backend-runtime');
 const { reconcileModelConfiguration } = require('./model-config');
 const { installModelPackage, installedModel } = require('./model-package');
 const { compatibleModelAsset, compatibleUpdateAsset } = require('./update-assets');
@@ -1018,8 +1018,9 @@ async function createApplication() {
   const dataDirectory = path.join(app.getPath('userData'), 'data');
   const { configPath, value: modelConfig } = reconcileModelConfiguration(app.getPath('userData'));
   const activeModel = modelConfig.profiles?.[modelConfig.activeProfile] || {};
-  const installedSnapshot = requiredModel && path.join(requiredModel.target, 'snapshot');
-  if (installedSnapshot && fs.existsSync(installedSnapshot)) activeModel.modelSource = installedSnapshot;
+  // Always point the backend at the verified install. If those files later go
+  // missing, the backend exits and the app restarts through ensureRequiredModel.
+  activeModel.modelSource = path.join(requiredModel.target, 'snapshot');
   console.log(`Model configuration: ${configPath}`);
   backend = spawn(command.executable, command.args, {
     env: backendEnvironment({
@@ -1034,6 +1035,21 @@ async function createApplication() {
   backend.stdout.on('data', (chunk) => console.log(`[search] ${chunk.toString().trimEnd()}`));
   backend.stderr.on('data', (chunk) => console.error(`[search] ${chunk.toString().trimEnd()}`));
   backend.on('exit', (code, signal) => {
+    if (!quitting && code === MODEL_MISSING_EXIT_CODE) {
+      quitting = true;
+      dialog.showMessageBox({
+        type: 'warning',
+        title: 'Image ranking model missing',
+        message: 'The image ranking model is missing.',
+        detail: 'Gnosis Images will restart and download it again.',
+        buttons: ['Restart'],
+        noLink: true
+      }).finally(() => {
+        app.relaunch();
+        app.quit();
+      });
+      return;
+    }
     if (!quitting && mainWindow) {
       dialog.showErrorBox('Search engine stopped', `The local search engine stopped unexpectedly (${signal || code}).`);
     }

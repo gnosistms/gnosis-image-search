@@ -1,5 +1,9 @@
 const path = require('node:path');
 
+// The backend exits with this code when the installed model files are gone.
+// Keep it in sync with MODEL_MISSING_EXIT_CODE in semantic_embeddings.py.
+const MODEL_MISSING_EXIT_CODE = 78;
+
 const BUNDLED_CA_RELATIVE_PATH = path.join(
   'b',
   '_internal',
@@ -33,7 +37,9 @@ function backendEnvironment(options) {
     SEARCH_MODEL_KIND: activeModel.modelKind || 'siglip',
     SEARCH_MODEL_NAME: activeModel.checkpoint || 'google/siglip2-base-patch16-256',
     ...(activeModel.modelSource ? { SEARCH_MODEL_SOURCE: activeModel.modelSource } : {}),
-    SEARCH_MODEL_ALLOW_DOWNLOAD: '1',
+    // The app installs the verified model package before starting the
+    // backend, so the backend must never fetch weights from Hugging Face.
+    SEARCH_MODEL_ALLOW_DOWNLOAD: '0',
     ...(activeModel.cacheDirectory ? { SEARCH_MODEL_CACHE_DIR: activeModel.cacheDirectory } : {}),
     ...(activeModel.axisModel ? { SEARCH_AXIS_MODEL: activeModel.axisModel } : {}),
     ...(activeModel.referenceEmbeddings ? { SEARCH_PAMELA_EMBEDDINGS: activeModel.referenceEmbeddings } : {}),
@@ -52,6 +58,7 @@ function backendEnvironment(options) {
 
 module.exports = {
   BUNDLED_CA_RELATIVE_PATH,
+  MODEL_MISSING_EXIT_CODE,
   backendEnvironment,
   bundledCertificatePath,
   packagedBackendExecutable

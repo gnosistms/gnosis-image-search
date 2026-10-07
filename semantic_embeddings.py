@@ -23,6 +23,17 @@ MODEL_SOURCE = os.environ.get("SEARCH_MODEL_SOURCE") or MODEL_NAME
 MODEL_CACHE_DIR = os.environ.get("SEARCH_MODEL_CACHE_DIR") or None
 MODEL_ALLOW_DOWNLOAD = os.environ.get("SEARCH_MODEL_ALLOW_DOWNLOAD", "0") == "1"
 MODEL_CACHE_KEY = f"{MODEL_KIND}:{MODEL_NAME}"
+# The desktop app restarts and downloads the model again when the backend exits
+# with this code. Keep it in sync with electron/backend-runtime.js.
+MODEL_MISSING_EXIT_CODE = 78
+REQUIRED_MODEL_FILES = (
+    "config.json",
+    "model.safetensors",
+    "preprocessor_config.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+)
 HERE = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("SEARCH_DATA_DIR") or HERE / "data").expanduser()
 CACHE_PATH = DATA_DIR / "image-embeddings.sqlite3"
@@ -71,6 +82,14 @@ def _cached_item_vector(item: dict) -> np.ndarray | None:
     return None
 
 
+def _missing_model_files() -> list[str]:
+    """Required files absent from the app-installed model folder."""
+    if not os.path.isabs(MODEL_SOURCE):
+        return []
+    folder = Path(MODEL_SOURCE)
+    return [name for name in REQUIRED_MODEL_FILES if not (folder / name).is_file()]
+
+
 def _load_model() -> bool:
     global _MODEL, _PROCESSOR, _TORCH, _DEVICE, _MODEL_UNAVAILABLE
     if _MODEL is not None:
@@ -80,6 +99,15 @@ def _load_model() -> bool:
     with _MODEL_LOCK:
         if _MODEL is not None:
             return True
+        missing = _missing_model_files()
+        if missing:
+            # Searching without the model would silently drop relevance ranking.
+            print(
+                f"Image ranking model is missing {', '.join(missing)} in {MODEL_SOURCE}",
+                file=__import__("sys").stderr,
+                flush=True,
+            )
+            os._exit(MODEL_MISSING_EXIT_CODE)
         try:
             import torch
             import transformers

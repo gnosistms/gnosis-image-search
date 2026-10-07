@@ -1,8 +1,10 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
 const {
+  MODEL_MISSING_EXIT_CODE,
   backendEnvironment,
   bundledCertificatePath,
   packagedBackendExecutable
@@ -59,6 +61,20 @@ test('development backend leaves existing certificate settings unchanged', () =>
   assert.equal(environment.SEARCH_MODEL_NAME, 'example/model');
   assert.equal(environment.SEARCH_MODEL_SOURCE, '/tmp/model-snapshot');
   assert.equal(environment.SEARCH_MODEL_CACHE_DIR, '/tmp/model-cache');
+});
+
+test('backend never downloads model weights on its own', () => {
+  const environment = backendEnvironment({
+    baseEnvironment: { SEARCH_MODEL_ALLOW_DOWNLOAD: '1' },
+    dataDirectory: '/tmp/gnosis-data',
+    activeModel: { modelSource: '/tmp/model-snapshot' }
+  });
+  assert.equal(environment.SEARCH_MODEL_ALLOW_DOWNLOAD, '0');
+});
+
+test('backend and app agree on the missing-model exit code', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'semantic_embeddings.py'), 'utf8');
+  assert.match(source, new RegExp(`^MODEL_MISSING_EXIT_CODE = ${MODEL_MISSING_EXIT_CODE}$`, 'm'));
 });
 
 test('packaged backend selects the native executable name', () => {

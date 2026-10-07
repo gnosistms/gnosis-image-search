@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const MODEL_CONFIG_SCHEMA_VERSION = 1;
-const DEFAULT_ACTIVE_PROFILE = 'pamela-siglip2-base-v1';
+const DEFAULT_ACTIVE_PROFILE = 'pamela-siglip2-base-v2';
 const BUNDLED_MODELS_DIRECTORY = 'bundled-models';
 const BUNDLED_MODEL_MANIFEST = 'gnosis-model-manifest.json';
 
@@ -21,7 +21,9 @@ const MANAGED_MODEL_PROFILES = {
 // the update, the active profile is switched before its app-owned cache is
 // removed. Never list a user-created profile here.
 const RETIRED_MANAGED_PROFILES = [
-  { id: 'pamela-siglip2-large-v1', cacheSubdirectory: 'pamela-siglip2-large-v1' }
+  { id: 'pamela-siglip2-large-v1', cacheSubdirectory: 'pamela-siglip2-large-v1' },
+  // The same checkpoint stored in float32. v2 stores it in float16.
+  { id: 'pamela-siglip2-base-v1', cacheSubdirectory: 'pamela-siglip2-base-v1' }
 ];
 
 function isInsideDirectory(parent, candidate) {
@@ -77,7 +79,7 @@ function copyModelTree(fileSystem, source, destination) {
     }
     return;
   }
-  // APFS can clone the 1.4 GB weights without duplicating their physical disk
+  // APFS can clone the model weights without duplicating their physical disk
   // blocks. Node falls back to an ordinary copy when cloning is unavailable.
   fileSystem.copyFileSync(source, destination, fs.constants.COPYFILE_FICLONE);
 }
@@ -103,7 +105,7 @@ function seedBundledModel(userData, resourcesPath, options = {}) {
   }
 
   // Adopt a model downloaded by an earlier app version when its expected files
-  // are already complete. This avoids copying the same 1.4 GB payload again.
+  // are already complete. This avoids copying the same model payload again.
   if (manifestFilesExist(fileSystem, target, manifest)) {
     fileSystem.writeFileSync(targetManifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     return { status: 'adopted-existing', target };

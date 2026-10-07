@@ -20,9 +20,17 @@ profile. On first launch, configuration is switched first and only the retired
 directory inside this app-owned `models` directory is deleted. External and
 shared cache paths are never recursively removed.
 
-The previous `pamela-siglip2-large-v1` profile is retired. Upgrading switches
-the managed default to `pamela-siglip2-base-v1` and removes only the old
-app-owned Large checkpoint cache after the new configuration is written.
+The previous `pamela-siglip2-large-v1` and `pamela-siglip2-base-v1` profiles
+are retired. `pamela-siglip2-base-v2` is the same Base checkpoint with its
+weights stored in float16 (about 750 MB instead of 1.5 GB). Apple GPUs already
+ran the model in float16, so their results are unchanged; the CPU path
+(Windows and Macs without an Apple GPU) converts the weights back to float32
+when loading. Upgrading downloads the v2 package first, then switches the
+managed default and removes only the old app-owned checkpoint folders.
+
+The backend never downloads weights itself (`SEARCH_MODEL_ALLOW_DOWNLOAD=0`).
+If the installed model files disappear while the app is running, the backend
+exits with code 78 and the app restarts, downloading the model package again.
 
 Profiles accept `modelKind: "siglip"` or `modelKind: "clip"`. A ranking profile
 must also supply a compatible learned axis (`axisModel`) and compatible

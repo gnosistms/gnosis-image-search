@@ -72,6 +72,29 @@ test('migrates the retired Large profile to Base and removes its app-owned cache
   assert.equal(fs.existsSync(retiredCache), false);
 });
 
+test('replaces the float32 Base model folder with the float16 one', () => {
+  const userData = temporaryUserData();
+  const oldCache = path.join(userData, 'models', 'pamela-siglip2-base-v1');
+  const newCache = path.join(userData, 'models', DEFAULT_ACTIVE_PROFILE);
+  for (const folder of [oldCache, newCache]) {
+    fs.mkdirSync(path.join(folder, 'snapshot'), { recursive: true });
+    fs.writeFileSync(path.join(folder, 'snapshot', 'model.safetensors'), 'weights');
+  }
+  fs.writeFileSync(path.join(userData, 'model-config.json'), JSON.stringify({
+    activeProfile: 'pamela-siglip2-base-v1',
+    profiles: {
+      'pamela-siglip2-base-v1': { source: 'bundled', cacheDirectory: oldCache }
+    }
+  }));
+
+  const result = reconcileModelConfiguration(userData);
+  assert.equal(DEFAULT_ACTIVE_PROFILE, 'pamela-siglip2-base-v2');
+  assert.equal(result.value.activeProfile, DEFAULT_ACTIVE_PROFILE);
+  assert.equal(Object.hasOwn(result.value.profiles, 'pamela-siglip2-base-v1'), false);
+  assert.equal(fs.existsSync(oldCache), false);
+  assert.equal(fs.existsSync(path.join(newCache, 'snapshot', 'model.safetensors')), true);
+});
+
 test('switches away from a retired profile and deletes only its private cache', () => {
   const userData = temporaryUserData();
   const retiredCache = path.join(userData, 'models', 'old-model');
