@@ -79,6 +79,14 @@ UNIVERSAL_COMASONRY_BASE_URL = "https://www.universalfreemasonry.org"
 UNIVERSAL_COMASONRY_GALLERIES_URL = (
     UNIVERSAL_COMASONRY_BASE_URL + "/en/masonic-galleries"
 )
+MANDRAGORE_BASE_URL = "https://mandragore.bnf.fr"
+MANDRAGORE_PAGE_SIZE = 50
+MANDRAGORE_MAX_PAGES = 8
+MANDRAGORE_MAX_KEYWORDS = 4
+MANDRAGORE_LICENSE = (
+    "BnF/Gallica: free non-commercial reuse with credit; "
+    "commercial reuse requires a BnF licence"
+)
 UNIVERSAL_COMASONRY_CATALOG_TTL = 7 * 24 * 60 * 60
 _UNIVERSAL_COMASONRY_CATALOG_LOCK = threading.Lock()
 _UNIVERSAL_COMASONRY_REFRESH_LOCK = threading.Lock()
@@ -1281,6 +1289,370 @@ def loc(query: str, need: int, cue=None) -> list[dict]:
         "fa": "online-format:image",
     })
     return parse_loc_response(sources._get_json(url, "loc") or {}, need)
+
+
+_MANDRAGORE_KEYWORD_LINK = re.compile(
+    r'"UD_DESCRIPTEUR"\s*,\s*"((?:[^"\\]|\\.)*)"'
+)
+_MANDRAGORE_RESULT_COUNT = re.compile(r"([\d\s \xa0]+)\s+résultats?")
+_MANDRAGORE_FOLIO = re.compile(
+    r"^(?:(?i:f\.|p\.|fragm\.|pièce|rouleau|contreplat|plat|garde|bulle|sceau)"
+    r"|[IVXLC]+$|\d)"
+)
+_MANDRAGORE_DATE = re.compile(r"\d|siècle", re.IGNORECASE)
+_MANDRAGORE_QUALIFIER = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+class _MandragoreKeywordParser(HTMLParser):
+    """Pair each thesaurus label with the French keyword it searches."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_label = False
+        self.label: list[str] = []
+        self.matches: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        values = {str(name).lower(): str(value or "") for name, value in attrs}
+        if tag.lower() == "section":
+            self.label = []
+        elif tag.lower() == "h2":
+            self.in_label = True
+        elif tag.lower() == "a":
+            match = _MANDRAGORE_KEYWORD_LINK.search(values.get("href", ""))
+            if match:
+                keyword = re.sub(r"\\(.)", r"\1", match.group(1))
+                label = " ".join("".join(self.label).split())
+                self.matches.append((label, keyword))
+
+    def handle_data(self, data: str):
+        if self.in_label:
+            self.label.append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "h2":
+            self.in_label = False
+
+
+class _MandragoreResultsParser(HTMLParser):
+    """Extract decoration-unit records from a Mandragore result list."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.records: list[dict] = []
+        self.current: dict | None = None
+        self.results_depth = 0
+        self.in_title = False
+        self.field: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs):
+        values = {str(name).lower(): str(value or "") for name, value in attrs}
+        element_id = values.get("id", "")
+        if tag.lower() == "section" and (self.results_depth or element_id == "results-list"):
+            self.results_depth += 1
+        if not self.results_depth:
+            return
+        if tag.lower() == "input" and element_id.startswith("consult-"):
+            self.current = {"ark": values.get("value", ""), "fields": []}
+            self.records.append(self.current)
+        elif not self.current:
+            return
+        elif tag.lower() == "input" and element_id.startswith("mirador-"):
+            self.current["canvas"] = values.get("value", "")
+        elif tag.lower() == "h1":
+            self.in_title = True
+            self.current["title"] = ""
+        elif tag.lower() == "li":
+            self.field = []
+
+    def handle_data(self, data: str):
+        if self.in_title and self.current is not None:
+            self.current["title"] += data
+        elif self.field is not None:
+            self.field.append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag.lower() == "section" and self.results_depth:
+            self.results_depth -= 1
+            if not self.results_depth:
+                self.current, self.field = None, None
+        elif tag.lower() == "h1":
+            self.in_title = False
+        elif tag.lower() == "li" and self.field is not None and self.current:
+            text = " ".join("".join(self.field).split())
+            if text:
+                self.current["fields"].append(text)
+            self.field = None
+
+
+def parse_mandragore_keyword_matches(document: str, term: str) -> list[tuple[str, str]]:
+    """Return (thesaurus label, French keyword) pairs naming exactly ``term``.
+
+    The thesaurus lookup is a substring search over labels in five languages,
+    so "dragon" also returns "Chevalier au Dragon".  Only a label equal to the
+    term, optionally after a trailing qualifier such as "(non identifié)",
+    is a translation.
+    """
+    from relevance_terms import fold
+    wanted = fold(term)
+    parser = _MandragoreKeywordParser()
+    parser.feed(document or "")
+    matches = []
+    seen = set()
+    for label, keyword in parser.matches:
+        if not keyword or keyword in seen:
+            continue
+        if wanted not in {fold(label), fold(_MANDRAGORE_QUALIFIER.sub("", label))}:
+            continue
+        seen.add(keyword)
+        matches.append((label, keyword))
+    return matches[:MANDRAGORE_MAX_KEYWORDS]
+
+
+def _mandragore_creation_unit(value: str) -> dict:
+    """Split "Shelfmark - Artist - Place - Date" from a creation unit line."""
+    parts = [part.strip() for part in value.split(" - ") if part.strip()]
+    unit = {"artist": "", "place": "", "date": ""}
+    if len(parts) > 1 and _MANDRAGORE_DATE.search(parts[-1]):
+        unit["date"] = parts.pop()
+    if len(parts) > 1:
+        artist = parts[1]
+        unit["artist"] = "" if artist.casefold().startswith("artiste non identifi") else artist
+    if len(parts) > 2:
+        unit["place"] = ", ".join(parts[2:])
+    return unit
+
+
+def parse_mandragore_results(document: str) -> tuple[list[dict], int, int]:
+    """Convert one result page into records, its row count, and the total."""
+    parser = _MandragoreResultsParser()
+    parser.feed(document or "")
+    count_match = _MANDRAGORE_RESULT_COUNT.search(document or "")
+    total = int(re.sub(r"\D", "", count_match.group(1))) if count_match else 0
+    out = []
+    for record in parser.records:
+        ark = record.get("ark", "").strip()
+        canvas = record.get("canvas", "").strip()
+        # Undecorated or undigitized units carry an empty Mirador canvas and
+        # a generic placeholder in place of an IIIF image.
+        if not ark.startswith("ark:/") or not canvas.startswith("ark:/"):
+            continue
+        fields = {}
+        for text in record.get("fields", []):
+            name, separator, value = text.partition(" : ")
+            if not separator:
+                name, separator, value = text.partition(":")
+            if separator:
+                fields[name.strip()] = value.strip()
+        heading = " ".join(record.get("title", "").split())
+        folio, separator, subject = heading.partition(", ")
+        if not separator or not _MANDRAGORE_FOLIO.match(folio):
+            folio, subject = "", heading
+        manuscript = fields.get("Manuscrit", "")
+        unit = _mandragore_creation_unit(fields.get("Unité de création", ""))
+        illuminated_text = fields.get("Texte enluminé", "")
+        location = ", ".join(filter(None, (manuscript, folio)))
+        iiif = f"{MANDRAGORE_BASE_URL}/iiif/{canvas}"
+        out.append({
+            "source": "mandragore", "source_id": ark,
+            "title": subject or "Untitled",
+            "artist": unit["artist"], "date": unit["date"],
+            "medium": "Manuscript illumination",
+            "license": MANDRAGORE_LICENSE,
+            "attribution": "Bibliothèque nationale de France"
+                           + (f", {location}" if location else ""),
+            "description": ". ".join(filter(None, (
+                "Bibliothèque nationale de France"
+                + (f", {location}" if location else ""),
+                illuminated_text, unit["place"],
+            ))),
+            "search_text": {
+                "Manuscript": manuscript,
+                "Illuminated text": illuminated_text,
+                "Place": unit["place"],
+            },
+            "page_url": f"{MANDRAGORE_BASE_URL}/{ark}",
+            # Gallica's own IIIF host blocks non-browser clients; Mandragore
+            # proxies the same IIIF 1.1 service, where "native" is the format.
+            "image_url": f"{iiif}/full/full/0/native.jpg",
+            "thumb_url": f"{iiif}/full/800,/0/native.jpg",
+            "width": 0, "height": 0,
+        })
+    return out, len(parser.records), total
+
+
+def _mandragore_fetch_text(url: str) -> str:
+    import sources
+    last_failure = "Collection connection failed"
+    for attempt in range(3):
+        check_work()
+        count("provider_requests")
+        try:
+            request = urllib.request.Request(url, headers={
+                **sources.UA, "Accept": "text/html,application/xhtml+xml",
+            })
+            with urllib.request.urlopen(request, timeout=network_timeout(30)) as response:
+                return response.read().decode("utf-8", "replace")
+        except WorkExpired:
+            raise
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 500, 502, 503):
+                last_failure = f"Collection service error (HTTP {exc.code})"
+                pause(3 * (attempt + 1))
+                continue
+            note_failure(f"Collection request failed (HTTP {exc.code})")
+            return ""
+        except Exception as exc:
+            last_failure = ("Collection request timed out" if isinstance(exc, TimeoutError)
+                            else "Collection connection failed")
+            pause(2 * (attempt + 1))
+    note_failure(last_failure)
+    return ""
+
+
+def _mandragore_cached(url: str, parse):
+    """Fetch an HTML page once and keep only its parsed, JSON-ready form."""
+    import sources
+    check_work()
+    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:20]
+    path = Path(sources.CACHE) / f"mandragore_{digest}.json"
+    try:
+        with path.open(encoding="utf-8") as stream:
+            return json.load(stream)
+    except (OSError, ValueError):
+        pass
+    document = _mandragore_fetch_text(url)
+    if not document:
+        return None
+    parsed = parse(document)
+    try:
+        with path.open("w", encoding="utf-8") as stream:
+            json.dump(parsed, stream, ensure_ascii=False)
+    except OSError:
+        pass
+    return parsed
+
+
+def _mandragore_keywords(term: str) -> list[tuple[str, str]]:
+    url = f"{MANDRAGORE_BASE_URL}/exploration/concept/recherche?" + urllib.parse.urlencode({
+        "search": term, "langue": "", "termePref": "",
+    })
+    matches = _mandragore_cached(
+        url, lambda document: parse_mandragore_keyword_matches(document, term)
+    )
+    return [tuple(match) for match in matches or []]
+
+
+def _mandragore_text_search(text: str):
+    return lambda page: f"{MANDRAGORE_BASE_URL}/recherche?" + urllib.parse.urlencode({
+        "text": text, "page": page, "size": MANDRAGORE_PAGE_SIZE,
+    })
+
+
+def _mandragore_keyword_search(keywords: list[tuple[str, str]]):
+    search_data = json.dumps({
+        "formField": [
+            {"critere": "UD_DAOEXIST", "value": "true", "operator": "AND"},
+            *[
+                {"critere": "UD_DESCRIPTEUR", "value": keyword,
+                 "exactValue": True, "operator": "OR"}
+                for _label, keyword in keywords
+            ],
+        ],
+        "formType": "UD",
+    }, ensure_ascii=False)
+    return lambda page: f"{MANDRAGORE_BASE_URL}/recherche/avancee?" + urllib.parse.urlencode({
+        "searchData": search_data, "page": page, "size": MANDRAGORE_PAGE_SIZE,
+    })
+
+
+def _mandragore_translation_evidence(pairs: list[tuple[str, str]]) -> dict:
+    from relevance_terms import fold
+    evidence = [
+        f"{label} → {keyword}" for label, keyword in pairs
+        if fold(label) != fold(keyword)
+    ]
+    return ({"Query translation (Mandragore thesaurus)": "; ".join(evidence)}
+            if evidence else {})
+
+
+def _mandragore_searches(query: str) -> list[tuple]:
+    """Translate a query through Mandragore's multilingual thesaurus.
+
+    Mandragore's search box only matches French keywords, while its thesaurus
+    also carries English, German, Italian and Spanish labels.  Returns
+    (page URL builder, provider evidence, only-if-nothing-found) searches in
+    priority order.  The English label is kept as provider metadata so match
+    evidence and all-terms filtering see what each record matched.
+    """
+    from relevance_terms import STOPWORDS, fold
+    keywords = _mandragore_keywords(query)
+    if keywords:
+        # Keyword indexing is the precise route; the full-text search adds
+        # units whose subject names the concept without that keyword.
+        french = _MANDRAGORE_QUALIFIER.sub("", keywords[0][1])
+        evidence = [
+            f"{keyword} ({label})" for label, keyword in keywords
+            if fold(label) != fold(keyword)
+        ]
+        return [
+            (_mandragore_keyword_search(keywords),
+             {"Mandragore keyword": evidence} if evidence else {}, False),
+            (_mandragore_text_search(french),
+             _mandragore_translation_evidence([(keywords[0][0], french)]), False),
+        ]
+    words = list(dict.fromkeys(
+        word for word in re.findall(r"[\w'’-]+", query)
+        if fold(word) and fold(word) not in STOPWORDS
+    ))
+    if not 1 < len(words) <= MANDRAGORE_MAX_KEYWORDS:
+        return [(_mandragore_text_search(query), {}, False)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(words)) as pool:
+        translations = list(map_work(pool, _mandragore_keywords, words))
+    pairs = [
+        (matches[0][0], _MANDRAGORE_QUALIFIER.sub("", matches[0][1]))
+        for matches in translations if matches
+    ]
+    translated = (_mandragore_text_search(" ".join(keyword for _label, keyword in pairs)),
+                  _mandragore_translation_evidence(pairs))
+    if len(pairs) == len(words):
+        return [(*translated, False), (_mandragore_text_search(query), {}, True)]
+    # The full-text search requires every word, so an untranslated English
+    # word usually empties it.  Fall back to the translated words alone only
+    # when the literal query finds nothing; visual ranking then orders them.
+    searches = [(_mandragore_text_search(query), {}, False)]
+    if pairs:
+        searches.append((*translated, True))
+    return searches
+
+
+def mandragore(query: str, need: int, cue=None) -> list[dict]:
+    query = " ".join(str(query or "").split())
+    if not query:
+        return []
+    out = []
+    seen = set()
+    pages = min(MANDRAGORE_MAX_PAGES, max(1, -(-need // MANDRAGORE_PAGE_SIZE)))
+    for page_url, evidence, only_if_empty in _mandragore_searches(query):
+        if len(out) >= need or (only_if_empty and out):
+            break
+        for page in range(1, pages + 1):
+            parsed = _mandragore_cached(page_url(page), parse_mandragore_results)
+            if not parsed:
+                break
+            records, rows, total = parsed
+            for record in records:
+                # Several decoration units on one folio share its page image.
+                identities = (record["source_id"], record["image_url"])
+                if seen.intersection(identities):
+                    continue
+                seen.update(identities)
+                record["search_text"].update(evidence)
+                out.append(record)
+            if (len(out) >= need or rows < MANDRAGORE_PAGE_SIZE
+                    or page * MANDRAGORE_PAGE_SIZE >= total):
+                break
+    return out
 
 
 def _harvard_base_image_url(value: str) -> str:

@@ -54,8 +54,8 @@ sys.path.insert(0, str(PROTOTYPE_DIR))
 
 import sources  # noqa: E402
 from additional_sources import (  # noqa: E402
-    NGACatalog, getty, harvard, loc, mia, museum_commons, paris_musees,
-    universal_comasonry, yale,
+    NGACatalog, getty, harvard, loc, mandragore, mia, museum_commons,
+    paris_musees, universal_comasonry, yale,
 )
 from gnosis_catalog import GnosisCatalog  # noqa: E402
 from google_image_search import (  # noqa: E402
@@ -94,13 +94,17 @@ SOURCE_LABELS = OrderedDict([
     ("paris_musees", "Paris Musées"),
     ("mia", "Minneapolis Institute of Art"),
     ("loc", "Library of Congress"),
+    ("mandragore", "BnF Mandragore — Illuminated Manuscripts"),
     ("smk", "Statens Museum for Kunst"),
     ("wellcome", "Wellcome Collection"),
     ("vam", "Victoria and Albert Museum"),
     ("commons", "Wikimedia Commons — Museum Collections"),
     ("europeana", "Europeana"),
 ])
-DEFAULT_SELECTED = tuple(SOURCE_LABELS)
+# Mandragore returns whole manuscript pages under non-commercial reuse terms,
+# so it is offered as an opt-in collection rather than searched by default.
+OPT_IN_SOURCES = frozenset(("mandragore",))
+DEFAULT_SELECTED = tuple(name for name in SOURCE_LABELS if name not in OPT_IN_SOURCES)
 # Google Images indexes these collection sites well enough to return actual
 # object pages.  Keep this separate from DEFAULT_SELECTED: the normal search
 # should continue using every collection's official API/catalog adapter.
@@ -234,6 +238,7 @@ sources.ADAPTERS["yale"] = yale
 sources.ADAPTERS["paris_musees"] = paris_musees
 sources.ADAPTERS["mia"] = mia
 sources.ADAPTERS["loc"] = loc
+sources.ADAPTERS["mandragore"] = mandragore
 sources.ADAPTERS["commons"] = museum_commons
 sources.ADAPTERS["universal_comasonry"] = universal_comasonry
 

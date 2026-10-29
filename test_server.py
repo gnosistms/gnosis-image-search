@@ -424,8 +424,14 @@ class SessionTests(unittest.TestCase):
             ["universal_comasonry"],
         )
 
-    def test_every_collection_is_selected_by_default(self):
-        self.assertEqual(tuple(server.SOURCE_LABELS), server.DEFAULT_SELECTED)
+    def test_every_collection_except_opt_in_ones_is_selected_by_default(self):
+        self.assertEqual(server.OPT_IN_SOURCES, frozenset(("mandragore",)))
+        self.assertEqual(
+            tuple(name for name in server.SOURCE_LABELS
+                  if name not in server.OPT_IN_SOURCES),
+            server.DEFAULT_SELECTED,
+        )
+        self.assertEqual(server.parse_sources("mandragore"), ["mandragore"])
 
     def test_session_merges_sources_into_one_ranked_list(self):
         session = server.create_session("divine wisdom", ["gnosis", "met"])
@@ -825,7 +831,14 @@ class BatchTests(unittest.TestCase):
             self.assertIn(name, sources.ADAPTERS)
             self.assertIn(name, server.DEFAULT_SELECTED)
 
-        self.assertEqual(len(server.SOURCE_LABELS), 18)
+        self.assertEqual(len(server.SOURCE_LABELS), 19)
+        self.assertEqual(
+            server.SOURCE_LABELS["mandragore"],
+            "BnF Mandragore — Illuminated Manuscripts",
+        )
+        self.assertIs(sources.ADAPTERS["mandragore"], additional_sources.mandragore)
+        self.assertNotIn("mandragore", server.DEFAULT_SELECTED)
+        self.assertNotIn("mandragore", server.GOOGLE_IMAGE_SOURCES)
         self.assertEqual(server.GOOGLE_IMAGE_SOURCES, frozenset((
             "universal_comasonry", "cleveland", "met", "aic", "nga",
             "harvard", "mia", "loc", "wellcome", "vam", "commons",
@@ -2052,6 +2065,207 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(
             additional_sources.parse_universal_comasonry_detail_page(detail),
             "Such is Adam Kadman, the primordial Adam of the Kabalists.",
+        )
+
+    MANDRAGORE_KEYWORDS = r"""
+    <div id="list-search"><ul>
+      <li><section><div><h2 class="not-fr">Chevalier au Dragon</h2></div>
+        <a class="mdgButton-dark search" href='javascript:rechercheFromCriterion(&quot;UD&quot;, &quot;UD_DESCRIPTEUR&quot;, &quot;Segurans le Brun&quot;)'>Chercher</a>
+      </section></li>
+      <li><section><div><h2 class="not-fr">unicorn</h2>
+        <span>LITTÉRATURE ET FICTION</span></div>
+        <a class="mdgButton-dark search" href='javascript:rechercheFromCriterion(&quot;UD&quot;, &quot;UD_DESCRIPTEUR&quot;, &quot;licorne&quot;)'>Chercher</a>
+      </section></li>
+      <li><section><div><h2 class="not-fr">brazen serpent</h2></div>
+        <a class="mdgButton-dark search" href='javascript:rechercheFromCriterion(&quot;UD&quot;, &quot;UD_DESCRIPTEUR&quot;, &quot;serpent d\&#39;airain&quot;)'>Chercher</a>
+      </section></li>
+      <li><section><div><h2>serpent (non identifié)</h2></div>
+        <a class="mdgButton-dark search" href='javascript:rechercheFromCriterion(&quot;UD&quot;, &quot;UD_DESCRIPTEUR&quot;, &quot;serpent (non identifié)&quot;)'>Chercher</a>
+      </section></li>
+    </ul></div>
+    """
+    MANDRAGORE_RESULTS = """
+    <section id="bloc-facets"><ul class="facet-list">
+      <li>Manuscrit : Facette 1</li></ul></section>
+    <section id="results"><span>2 résultats</span></section>
+    <section id="results-list"><ul>
+      <li>
+        <div id="result-img">
+          <img alt="" src="/iiif/ark:/12148/btv1b8100023b/f23.thumbnail"/>
+          <input type="hidden" id="consult-mdgud1" value="ark:/12148/cgfbt149643"/>
+          <input type="hidden" id="mirador-mdgud1" value="ark:/12148/btv1b8100023b/f23"/>
+        </div>
+        <div id="result-infos">
+          <h1><a href="/ark:/12148/cgfbt149643">f. 133r, Bible, Ancien
+            Testament, Zacharie : Vision de Zacharie : chandelier</a></h1>
+          <ul>
+            <li>Manuscrit&nbsp;:&nbsp;Français 4</li>
+            <li>Unité de création&nbsp;:&nbsp;<a href="/mdgcd818">Français 4
+              -&nbsp;Jacquemart de Hesdin -&nbsp;Paris (France)
+              -&nbsp;XVe siècle (début)</a></li>
+            <li>Texte enluminé&nbsp;:&nbsp;<a href="#">Guiard des Moulins,
+              Bible historiale</a></li>
+          </ul>
+        </div>
+      </li>
+      <li>
+        <div id="result-img">
+          <img class="no-img" alt="" src="/resources/images/consultation/common.png"/>
+          <input type="hidden" id="consult-mdgud2" value="ark:/12148/cgfbt8117j"/>
+          <input type="hidden" id="mirador-mdgud2" value=""/>
+        </div>
+        <div id="result-infos"><h1><a>f. 12v, Schéma(s) sur le zodiaque</a></h1>
+          <ul><li>Manuscrit&nbsp;:&nbsp;Arménien 108</li></ul></div>
+      </li>
+    </ul></section>
+    <footer><ul><li>Manuscrit : Footer link</li></ul></footer>
+    """
+
+    def test_mandragore_keyword_lookup_keeps_only_exact_thesaurus_labels(self):
+        parse = additional_sources.parse_mandragore_keyword_matches
+        self.assertEqual(
+            parse(self.MANDRAGORE_KEYWORDS, "Unicorn"), [("unicorn", "licorne")]
+        )
+        self.assertEqual(
+            parse(self.MANDRAGORE_KEYWORDS, "brazen serpent"),
+            [("brazen serpent", "serpent d'airain")],
+        )
+        self.assertEqual(
+            parse(self.MANDRAGORE_KEYWORDS, "serpent"),
+            [("serpent (non identifié)", "serpent (non identifié)")],
+        )
+        # A substring hit such as "Chevalier au Dragon" is not a translation.
+        self.assertEqual(parse(self.MANDRAGORE_KEYWORDS, "dragon"), [])
+
+    def test_mandragore_results_parser_skips_undigitized_units(self):
+        items, rows, total = additional_sources.parse_mandragore_results(
+            self.MANDRAGORE_RESULTS
+        )
+        self.assertEqual((rows, total), (2, 2))
+        self.assertEqual(len(items), 1)
+        item = items[0]
+        self.assertEqual(item["source"], "mandragore")
+        self.assertEqual(item["source_id"], "ark:/12148/cgfbt149643")
+        self.assertEqual(
+            item["title"],
+            "Bible, Ancien Testament, Zacharie : Vision de Zacharie : chandelier",
+        )
+        self.assertEqual(item["artist"], "Jacquemart de Hesdin")
+        self.assertEqual(item["date"], "XVe siècle (début)")
+        self.assertEqual(
+            item["attribution"],
+            "Bibliothèque nationale de France, Français 4, f. 133r",
+        )
+        self.assertEqual(item["search_text"], {
+            "Manuscript": "Français 4",
+            "Illuminated text": "Guiard des Moulins, Bible historiale",
+            "Place": "Paris (France)",
+        })
+        self.assertEqual(
+            item["page_url"], "https://mandragore.bnf.fr/ark:/12148/cgfbt149643"
+        )
+        self.assertEqual(
+            item["image_url"],
+            "https://mandragore.bnf.fr/iiif/ark:/12148/btv1b8100023b/f23/"
+            "full/full/0/native.jpg",
+        )
+        self.assertIn("non-commercial", item["license"])
+
+    def test_mandragore_translates_english_query_into_keyword_search(self):
+        requested = []
+
+        def fetch(url):
+            requested.append(url)
+            if "/exploration/concept/" in url:
+                return self.MANDRAGORE_KEYWORDS
+            return self.MANDRAGORE_RESULTS
+
+        with tempfile.TemporaryDirectory() as cache, \
+                patch.object(sources, "CACHE", cache), \
+                patch.object(additional_sources, "_mandragore_fetch_text", fetch):
+            items = additional_sources.mandragore("unicorn", 10)
+            self.assertEqual(additional_sources.mandragore("unicorn", 10), items)
+
+        # Thesaurus lookup, keyword search, then a full-text search for the
+        # French term; repeat searches are served from the cache.
+        self.assertEqual(len(requested), 3)
+        self.assertEqual(
+            urllib.parse.parse_qs(urllib.parse.urlsplit(requested[2]).query)["text"],
+            ["licorne"],
+        )
+        # The full-text page repeats the same folio, which is not shown twice.
+        self.assertEqual(len(items), 1)
+        search = urllib.parse.parse_qs(urllib.parse.urlsplit(requested[1]).query)
+        self.assertEqual(urllib.parse.urlsplit(requested[1]).path, "/recherche/avancee")
+        self.assertEqual(json.loads(search["searchData"][0])["formField"], [
+            {"critere": "UD_DAOEXIST", "value": "true", "operator": "AND"},
+            {"critere": "UD_DESCRIPTEUR", "value": "licorne",
+             "exactValue": True, "operator": "OR"},
+        ])
+        self.assertEqual(search["size"], ["50"])
+        self.assertEqual(
+            items[0]["search_text"]["Mandragore keyword"], ["licorne (unicorn)"]
+        )
+        normalized = server.normalize_result(items[0], 0, "unicorn")
+        self.assertIn("unicorn", normalized["page_text_terms"])
+        self.assertEqual(normalized["matched_query_terms"], ["unicorn"])
+
+    def test_mandragore_translates_each_word_or_falls_back_to_the_query(self):
+        thesaurus = {"brazen serpent": self.MANDRAGORE_KEYWORDS}
+        real_parse = additional_sources.parse_mandragore_results
+        word_matches = {
+            "unicorn": "<h2>unicorn</h2><a href='x(\"UD_DESCRIPTEUR\", \"licorne\")'></a>",
+            "virgin": "<h2>virgin</h2><a href='x(\"UD_DESCRIPTEUR\", \"Vierge\")'></a>",
+        }
+        requested = []
+
+        def fetch(url):
+            requested.append(url)
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            if "/exploration/concept/" in url:
+                term = query["search"][0]
+                return thesaurus.get(term) or word_matches.get(term, "<p></p>")
+            return self.MANDRAGORE_RESULTS
+
+        with tempfile.TemporaryDirectory() as cache, \
+                patch.object(sources, "CACHE", cache), \
+                patch.object(additional_sources, "_mandragore_fetch_text", fetch):
+            translated = additional_sources.mandragore("unicorn and virgin", 10)
+            untranslated = additional_sources.mandragore("saint george", 10)
+            first_requests = list(requested)
+            requested.clear()
+            with patch.object(
+                additional_sources, "parse_mandragore_results",
+                lambda document: (
+                    ([], 0, 0) if "unicorn knight" in requested[-1].replace("+", " ")
+                    else real_parse(document)
+                ),
+            ):
+                partial = additional_sources.mandragore("unicorn knight", 10)
+
+        searches = [
+            urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            for url in first_requests if urllib.parse.urlsplit(url).path == "/recherche"
+        ]
+        self.assertEqual([search["text"] for search in searches], [
+            ["licorne Vierge"], ["saint george"],
+        ])
+        self.assertEqual(
+            translated[0]["search_text"]["Query translation (Mandragore thesaurus)"],
+            "unicorn → licorne; virgin → Vierge",
+        )
+        self.assertNotIn(
+            "Query translation (Mandragore thesaurus)", untranslated[0]["search_text"]
+        )
+        # "knight" has no thesaurus label, so the literal query runs first and
+        # the translated words are searched only because it found nothing.
+        self.assertEqual([
+            urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["text"]
+            for url in requested if urllib.parse.urlsplit(url).path == "/recherche"
+        ], [["unicorn knight"], ["licorne"]])
+        self.assertEqual(
+            partial[0]["search_text"]["Query translation (Mandragore thesaurus)"],
+            "unicorn → licorne",
         )
 
     def test_universal_comasonry_catalog_enriches_images_from_detail_pages(self):
