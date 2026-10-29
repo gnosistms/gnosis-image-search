@@ -30,6 +30,7 @@
     "@electron-forge/maker-dmg": "^7.8.3",
     "@electron-forge/maker-zip": "^7.8.3",
     "@electron-forge/publisher-github": "^7.8.3",
+    "@electron/notarize": "^2.5.0",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "png2icons": "^2.0.1"

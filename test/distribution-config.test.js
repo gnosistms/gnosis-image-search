@@ -48,6 +48,13 @@ test('Intel macOS distribution names its installer for x64', () => {
   assert.match(dmg.config.name, /Gnosis-Images-Full-Installer-.*-x64/);
 });
 
+test('macOS notarization runs from the postPackage hook, not packager', async () => {
+  const config = distributionConfig('full', 'arm64');
+  assert.equal('osxNotarize' in config.packagerConfig, false);
+  assert.equal(typeof config.hooks.postPackage, 'function');
+  await config.hooks.postPackage(config, { platform: 'win32', arch: 'x64', outputPaths: ['/does/not/exist'] });
+});
+
 test('release workflow builds macOS natively for Apple Silicon and Intel', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8');
   assert.match(workflow, /arch: arm64[\s\S]*runner: macos-15/);

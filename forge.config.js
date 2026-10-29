@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { notarizeMacApp } = require('./scripts/notarize-mac-app');
 
 const signingIdentity = process.env.APPLE_SIGNING_IDENTITY;
 const notarizationEnabled = Boolean(
@@ -69,13 +70,6 @@ module.exports = {
         identityValidation: false
       })
     },
-    ...(notarizationEnabled ? {
-      osxNotarize: {
-        appleApiKey: process.env.APPLE_NOTARIZATION_KEY_PATH,
-        appleApiKeyId: process.env.APPLE_API_KEY,
-        appleApiIssuer: process.env.APPLE_API_ISSUER
-      }
-    } : {}),
     ignore: [
       /[\\/]\.packaging-python(?:[\\/]|$)/,
       /[\\/]assets[\\/]icon\.iconset(?:[\\/]|$)/,
@@ -90,6 +84,22 @@ module.exports = {
     // Keep the packaged resource prefix short for compatibility with Windows
     // tools and user-selected installation directories.
     extraResource: ['build/backend/b']
+  },
+  hooks: {
+    // Notarize here rather than through packager's osxNotarize so a dropped
+    // connection while stapling is retried instead of failing the release.
+    postPackage: async (forgeConfig, { platform, outputPaths }) => {
+      if (platform !== 'darwin' || !notarizationEnabled) return;
+      for (const outputPath of outputPaths) {
+        for (const name of fs.readdirSync(outputPath).filter(entry => entry.endsWith('.app'))) {
+          await notarizeMacApp(path.join(outputPath, name), {
+            appleApiKey: process.env.APPLE_NOTARIZATION_KEY_PATH,
+            appleApiKeyId: process.env.APPLE_API_KEY,
+            appleApiIssuer: process.env.APPLE_API_ISSUER
+          });
+        }
+      }
+    }
   },
   makers: [
     {
