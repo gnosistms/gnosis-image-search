@@ -1,3 +1,4 @@
+import io
 import json
 import math
 import threading
@@ -805,6 +806,134 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][1], "met")
         self.assertIn("title=true", calls[0][0])
+
+    def test_met_pages_search_ids_and_keeps_v1_public_domain_objects(self):
+        searches = []
+
+        def get_json(url, source, **kwargs):
+            parsed = urllib.parse.urlsplit(url)
+            if parsed.path.endswith("/search"):
+                self.assertEqual(parsed.path, "/public/collection/v1.1/search")
+                params = urllib.parse.parse_qs(parsed.query)
+                start, limit = int(params["offset"][0]), int(params["limit"][0])
+                self.assertEqual((params["q"], params["hasImages"], params["title"]),
+                                 (["sun & moon"], ["true"], ["true"]))
+                searches.append((start, limit))
+                return {"total": 503, "objectIDs": list(range(start, min(503, start + limit)))}
+            self.assertTrue(parsed.path.startswith("/public/collection/v1/objects/"))
+            oid = int(parsed.path.rsplit("/", 1)[1])
+            return {"isPublicDomain": oid >= 500, "primaryImage": "image" if oid != 501 else ""}
+
+        with patch.object(sources, "_get_json", side_effect=get_json):
+            hits = sources.met("sun & moon", 126)
+        self.assertEqual(searches, [(0, 500), (500, 4)])
+        self.assertEqual([hit["source_id"] for hit in hits], ["500", "502"])
+
+    def test_museum_challenges_recover_through_collection_specific_public_domain_files(self):
+        def file(page_id, institution, license_name):
+            return {
+                "pageid": page_id, "title": "File:Portrait.jpg",
+                "templates": [{"title": institution}],
+                "imageinfo": [{
+                    "mime": "image/jpeg", "url": "https://images.test/portrait.jpg",
+                    "descriptionurl": "https://commons.wikimedia.org/wiki/File:Portrait.jpg",
+                    "extmetadata": {
+                        "ObjectName": {"value": "Portrait<span>title QS:P1476,en:Portrait</span>"},
+                        "LicenseShortName": {"value": license_name},
+                    },
+                }],
+            }
+
+        for source, institutions in additional_sources._COMMONS_INSTITUTIONS.items():
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as folder:
+                requests = []
+                def urlopen(req, timeout):
+                    url = urllib.parse.urlsplit(req.full_url)
+                    requests.append(url.hostname)
+                    if url.hostname == "api.artic.edu":
+                        raise urllib.error.HTTPError(req.full_url, 403, "Forbidden",
+                                                     {"cf-mitigated": "challenge"}, None)
+                    if url.hostname == "lux.collections.yale.edu":
+                        response = io.BytesIO(b"")
+                        response.status, response.headers = 202, {"x-amzn-waf-action": "challenge"}
+                        return response
+                    self.assertEqual(url.hostname, "commons.wikimedia.org")
+                    params = urllib.parse.parse_qs(url.query)
+                    self.assertIn('hastemplate:"' + '|'.join(institutions) + '"', params["gsrsearch"][0])
+                    self.assertEqual(params["tltemplates"], ['|'.join(institutions)])
+                    return io.BytesIO(json.dumps({"query": {"pages": {
+                        "1": file(1, institutions[0], "Copyrighted"),
+                        "2": file(2, "Institution:Other Museum", "Public domain"),
+                        "3": file(3, institutions[-1], "CC0"),
+                    }}}).encode())
+
+                with patch.object(sources, "CACHE", folder), patch.object(sources, "DELAY", 0), \
+                     patch.object(sources.urllib.request, "urlopen", side_effect=urlopen):
+                    batch = server.search_batch(source, "portrait", 0, 10,
+                                                adapters=sources.ADAPTERS, resolve_dimensions=False)
+                self.assertEqual(batch["error"], "")
+                self.assertEqual([(r["source"], r["source_id"], r["title"]) for r in batch["results"]],
+                                 [(source, "commons:3", "Portrait")])
+                self.assertEqual(len(requests), 2)
+                session = server.SearchSession("portrait", [source])
+                snapshot = session.merge_batch(batch, score_results=False)
+                self.assertIn("Wikimedia Commons", snapshot["source_policy"][source]["coverage_note"])
+
+    def test_commons_mirror_follows_continuation_after_a_filtered_page(self):
+        page = {"pageid": 17, "title": "File:Portrait.jpg", "index": 52,
+                "templates": [{"title": "Institution:Yale University Art Gallery"}],
+                "imageinfo": [{"mime": "image/jpeg", "url": "https://images.test/portrait.jpg",
+                               "extmetadata": {"LicenseShortName": {"value": "Public domain"}}}]}
+        responses = [
+            sources.CollectionRequestError("Collection refused access (HTTP 403)", 403),
+            {"continue": {"continue": "gsroffset||", "gsroffset": 50}, "query": {"pages": {}}},
+            {"query": {"pages": {"17": page}}},
+        ]
+        with patch.object(sources, "_get_json", side_effect=responses) as get:
+            hits = sources.ADAPTERS["yale"]("portrait", 1)
+        self.assertEqual([hit["source_id"] for hit in hits], ["commons:17"])
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(get.call_args.args[0]).query)
+        self.assertEqual(params["gsroffset"], ["50"])
+        self.assertEqual(params["continue"], ["gsroffset||"])
+
+    def test_healthy_empty_museum_search_does_not_use_commons(self):
+        for source, payload in (("aic", {"data": []}), ("yale", {"orderedItems": []})):
+            with self.subTest(source=source), patch.object(sources, "_get_json", return_value=payload) as get:
+                self.assertEqual(sources.ADAPTERS[source]("portrait", 1), [])
+                get.assert_called_once()
+
+    def test_yale_keeps_native_results_when_a_later_record_is_unavailable(self):
+        base = "https://lux.collections.yale.edu/data/object/"
+        record = {
+            "id": base + "2", "_label": "Portrait",
+            "member_of": [{"_label": "Yale University Art Gallery"}],
+            "subject_to": [{"_label": "Public Domain"}],
+            "representation": [{"format": "image/jpeg",
+                                "access_point": [{"id": "https://images.test/work.jpg"}]}],
+        }
+        with patch.object(sources, "_get_json", side_effect=[
+                {"orderedItems": [{"id": base + str(i)} for i in (1, 2, 3)]},
+                sources.CollectionRequestError("Not found", 404), record,
+                sources.CollectionRequestError("Browser verification", 202),
+        ]):
+            hits = sources.ADAPTERS["yale"]("portrait", 10)
+        self.assertEqual([hit["source_id"] for hit in hits], ["2"])
+        self.assertIn("Some Yale catalogue records", hits[0]["coverage_note"])
+
+    def test_unavailable_museum_remains_retryable_when_mirror_is_empty_or_down(self):
+        for response, reason in (({"batchcomplete": ""}, "No matching public-domain image"),
+                                 (sources.CollectionRequestError("HTTP 503"), "HTTP 503")):
+            with self.subTest(reason=reason), patch.object(sources, "_get_json", side_effect=[
+                    sources.CollectionRequestError("Museum refused access (HTTP 403)"), response]):
+                batch = server.search_batch("yale", "portrait", 0, 10,
+                                            adapters=sources.ADAPTERS, resolve_dimensions=False)
+                session = server.SearchSession("portrait", ["yale"])
+                session.async_ranking = True
+                snapshot = session.merge_batch(batch, score_results=False)
+                policy = snapshot["source_policy"]["yale"]
+                self.assertTrue(policy["retryable"])
+                self.assertIn("403", policy["reason"])
+                self.assertIn(reason, policy["reason"])
 
     def test_new_collections_are_registered_and_selected(self):
         self.assertEqual(server.SOURCE_LABELS["getty"], "J. Paul Getty Museum")

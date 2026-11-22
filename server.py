@@ -22,6 +22,7 @@ import urllib.request
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Mapping
@@ -55,7 +56,7 @@ sys.path.insert(0, str(PROTOTYPE_DIR))
 import sources  # noqa: E402
 from additional_sources import (  # noqa: E402
     NGACatalog, getty, harvard, loc, mandragore, mia, museum_commons,
-    paris_musees, universal_comasonry, yale,
+    paris_musees, search_with_commons_fallback, universal_comasonry, yale,
 )
 from gnosis_catalog import GnosisCatalog  # noqa: E402
 from google_image_search import (  # noqa: E402
@@ -234,7 +235,8 @@ sources.ADAPTERS["gnosis"] = search_gnosis
 sources.ADAPTERS["getty"] = getty
 sources.ADAPTERS["nga"] = NGA_CATALOG.search
 sources.ADAPTERS["harvard"] = harvard
-sources.ADAPTERS["yale"] = yale
+sources.ADAPTERS["aic"] = partial(search_with_commons_fallback, "aic", sources.aic)
+sources.ADAPTERS["yale"] = partial(search_with_commons_fallback, "yale", yale)
 sources.ADAPTERS["paris_musees"] = paris_musees
 sources.ADAPTERS["mia"] = mia
 sources.ADAPTERS["loc"] = loc
@@ -806,6 +808,7 @@ def search_batch(
                     and len(verified) <= requested)
             ) if exact_phrases else len(window) < batch_size,
             "exact_verified": bool(exact_phrases),
+            "coverage_note": next((item["coverage_note"] for item in raw if item.get("coverage_note")), ""),
             "elapsed_ms": round((time.monotonic() - started) * 1000),
             "error": "",
         }
@@ -1063,6 +1066,8 @@ class SearchSession:
             state["fetched"] += state["last_batch_count"]
             state["rounds"] += 1
             state["exhausted"] = bool(group.get("exhausted"))
+            if group.get("coverage_note"):
+                state["coverage_note"] = group["coverage_note"]
             if group.get("error"):
                 self.source_errors[group["source"]] = group["error"]
                 state["stop_reason"] = str(group["error"]).removeprefix("RuntimeError: ")
@@ -1175,6 +1180,10 @@ class SearchSession:
     def snapshot(self, force_rank: bool = False) -> dict:
         with self.lock:
             self._rerank_locked(force=force_rank)
+            policy = self.continuation_policy()
+            for name, status in policy.items():
+                if note := self.source_states[name].get("coverage_note"):
+                    status["coverage_note"] = note
             return {
                 "session_id": self.id,
                 "lifecycle": self.lifecycle,
@@ -1197,7 +1206,7 @@ class SearchSession:
                     if name in self.selected_sources
                 }),
                 "selected_count": len(self.selected_sources),
-                "source_policy": self.continuation_policy(),
+                "source_policy": policy,
             }
 
 

@@ -70,6 +70,10 @@ YALE_MUSEUM_NAMES = (
     "Yale University Art Gallery",
     "Yale Center for British Art",
 )
+_COMMONS_INSTITUTIONS = {
+    "aic": ("Institution:Art Institute of Chicago",),
+    "yale": tuple("Institution:" + name for name in YALE_MUSEUM_NAMES),
+}
 PARIS_MUSEES_GRAPHQL_URL = (
     "https://apicollections.parismusees.paris.fr/graphql"
 )
@@ -632,6 +636,12 @@ def _commons_artwork_date(metadata: dict) -> str:
     return re.sub(r"\s*date\s+QS:.*$", "", value, flags=re.IGNORECASE).strip()
 
 
+def _commons_artwork_title(metadata: dict, filename: str) -> str:
+    title = _metadata_value(metadata, "ObjectName")
+    title = re.split(r"(?:title|label)\s+QS:", title, maxsplit=1, flags=re.IGNORECASE)[0]
+    return " ".join(title.split()) or filename
+
+
 def _commons_search_tokens(value: object) -> list[str]:
     folded = unicodedata.normalize("NFKD", str(value or ""))
     folded = "".join(char for char in folded if not unicodedata.combining(char))
@@ -810,14 +820,16 @@ def _reusable_commons_license(value: str) -> bool:
 
 
 def parse_museum_commons_response(
-    data: dict, need: int, query: str | None = None
+    data: dict, need: int, query: str | None = None, *, collection: str = "commons",
 ) -> list[dict]:
-    """Parse Commons files already constrained to collection + depicts claims."""
+    """Parse reusable files and verify any requested museum against the file metadata."""
     out = []
     object_positions: dict[str, int] = {}
     object_orders: dict[str, tuple[int, str]] = {}
-    pages = ((data or {}).get("query") or {}).get("pages") or {}
-    for page in pages.values():
+    pages = (((data or {}).get("query") or {}).get("pages") or {}).values()
+    if collection != "commons":
+        pages = sorted(pages, key=lambda page: page.get("index", 0))
+    for page in pages:
         try:
             info = (page.get("imageinfo") or [{}])[0]
             if info.get("mime") not in ("image/jpeg", "image/png", "image/webp"):
@@ -832,6 +844,12 @@ def parse_museum_commons_response(
             license_name = _metadata_value(metadata, "LicenseShortName")
             if not _reusable_commons_license(license_name):
                 continue
+            if collection != "commons":
+                institutions = {row.get("title") for row in page.get("templates", [])}
+                if institutions.isdisjoint(_COMMONS_INSTITUTIONS[collection]):
+                    continue
+                if license_name.casefold() not in {"public domain", "pdm", "cc0", "cc0 1.0"}:
+                    continue
             image_url = _clean_url(info.get("url") or "")
             if not image_url:
                 continue
@@ -857,6 +875,14 @@ def parse_museum_commons_response(
                 "width": _as_int(info.get("width")),
                 "height": _as_int(info.get("height")),
             }
+            if collection != "commons":
+                item.update(
+                    source=collection, source_id=f"commons:{page['pageid']}",
+                    title=_commons_artwork_title(metadata, item["title"]),
+                    medium="", image_delivery="commons",
+                    search_text={"File name": item["title"]},
+                    coverage_note="Searched public-domain images on Wikimedia Commons (partial collection)",
+                )
             object_key = _commons_met_object_key(metadata)
             view_order = _commons_file_view_order(str(page.get("title") or ""))
             if object_key and object_key in object_positions:
@@ -873,22 +899,72 @@ def parse_museum_commons_response(
     return out[:need * 2]
 
 
+def _commons_search_params(structured_query: str, limit: int) -> dict:
+    return {
+        "action": "query", "generator": "search", "gsrsearch": structured_query,
+        "gsrnamespace": "6", "gsrlimit": str(limit),
+        "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata",
+        "iiurlwidth": "1024", "format": "json",
+    }
+
+
 def museum_commons(query: str, need: int, cue=None) -> list[dict]:
     """Search only structured, reusable Commons collection objects."""
     import sources
-    structured_query = (
-        f"{query} filetype:bitmap "
-        "haswbstatement:P195 haswbstatement:P180"
+    params = _commons_search_params(
+        f"{query} filetype:bitmap haswbstatement:P195 haswbstatement:P180",
+        min(max(need * 5, 30), 50),
     )
-    url = "https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode({
-        "action": "query", "generator": "search", "gsrsearch": structured_query,
-        "gsrnamespace": "6", "gsrlimit": str(min(max(need * 5, 30), 50)),
-        "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata",
-        "iiurlwidth": "1024", "format": "json",
-    })
+    url = "https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(params)
     return parse_museum_commons_response(
         sources._get_json(url, "commons_museum") or {}, need, query
     )
+
+
+def _search_commons_collection(collection: str, query: str, need: int) -> list[dict]:
+    import sources
+    if not _commons_search_tokens(query):
+        return []
+    institutions = "|".join(_COMMONS_INSTITUTIONS[collection])
+    params = _commons_search_params(f'{query} filetype:bitmap hastemplate:"{institutions}"', 50)
+    params.update(prop="imageinfo|templates", tltemplates=institutions, tllimit="max")
+    results = {}
+    offset = 0
+    while True:
+        url = "https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(params)
+        data = sources._get_json(url, "commons_collection", required=True, timeout=15, attempts=2)
+        for item in parse_museum_commons_response(data, need, query, collection=collection):
+            results.setdefault(item["source_id"], item)
+            if len(results) >= need:
+                return list(results.values())
+        continuation = data.get("continue") or {}
+        next_offset = _as_int(continuation.get("gsroffset"))
+        if next_offset <= offset:
+            break
+        offset = next_offset
+        params.update(continuation)
+    return list(results.values())
+
+
+def search_with_commons_fallback(collection, primary, query, need, cue=None):
+    """Keep native empty results authoritative. Use a scoped mirror on request failure."""
+    import sources
+    if need <= 0:
+        return []
+    try:
+        return primary(query, need, cue)
+    except sources.CollectionRequestError as primary_error:
+        try:
+            items = _search_commons_collection(collection, query, need)
+        except sources.CollectionRequestError as mirror_error:
+            raise RuntimeError(
+                f"{primary_error}. Wikimedia Commons fallback failed ({mirror_error})"
+            ) from mirror_error
+        if not items:
+            raise RuntimeError(
+                f"{primary_error}. No matching public-domain image found on Wikimedia Commons."
+            ) from primary_error
+        return items
 
 
 def _is_getty_cc0(value: str) -> bool:
@@ -1872,13 +1948,23 @@ def yale(query: str, need: int, cue=None) -> list[dict]:
     url = YALE_SEARCH_URL + "?" + urllib.parse.urlencode({
         "q": json.dumps(search, separators=(",", ":")),
     })
-    data = sources._get_json(url, "yale") or {}
+    data = sources._get_json(url, "yale", required=True, timeout=12, attempts=1)
     out = []
     for reference in data.get("orderedItems") or []:
         record_url = _clean_url((reference or {}).get("id") or "")
         if not record_url:
             continue
-        item = parse_yale_record(sources._get_json(record_url, "yale") or {})
+        try:
+            record = sources._get_json(record_url, "yale", required=True, timeout=12, attempts=1)
+        except sources.CollectionRequestError as exc:
+            if exc.status == 404:
+                continue
+            if out:
+                for result in out:
+                    result["coverage_note"] = "Some Yale catalogue records could not be retrieved"
+                break
+            raise
+        item = parse_yale_record(record)
         if item:
             out.append(item)
         if len(out) >= need * 2:

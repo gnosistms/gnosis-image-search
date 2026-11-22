@@ -534,8 +534,9 @@ function renderSearchActivity(snapshot) {
   for (const [source, policy] of Object.entries(snapshot.source_policy || {})) {
     if (policy.selected === false) continue;
     const row = document.createElement('tr');
+    const details = [policy.reason, policy.coverage_note].filter(Boolean).join(' · ');
     for (const value of [collectionLabel(source), policy.stage || '', policy.fetched || 0,
-      policy.scored || 0, `${Math.floor(policy.progress_age_seconds || 0)}s ago`, policy.reason || '']) {
+      policy.scored || 0, `${Math.floor(policy.progress_age_seconds || 0)}s ago`, details]) {
       const cell = document.createElement('td');
       cell.textContent = value;
       row.append(cell);

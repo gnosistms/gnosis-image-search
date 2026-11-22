@@ -1,11 +1,12 @@
 """Museum/archive search adapters. Every adapter returns normalized candidates:
 {source, source_id, title, artist, date, medium, license, page_url,
  image_url, thumb_url, width, height, description}
-All requests are disk-cached and polite. Unconfigured/failing sources return [].
+Requests use a disk cache. Required catalogue requests surface failures to the caller.
 """
 from search_runtime import (check_work, network_timeout, pause, count, note_failure, WorkExpired, submit, map_work)
 import base64, concurrent.futures, hashlib, html, io, json, os, re, threading, time, unicodedata
 import urllib.request, urllib.parse
+from itertools import islice
 
 from relevance_terms import concepts
 
@@ -28,6 +29,19 @@ class EuropeanaAccessError(RuntimeError):
         super().__init__("Europeana API key access was limited or blocked.")
 
 
+class CollectionRequestError(RuntimeError):
+    """A required catalogue request failed before it returned usable data."""
+
+    def __init__(self, reason, status=None):
+        super().__init__(reason)
+        self.status = status
+
+
+def _browser_challenge(headers):
+    return (headers.get("x-amzn-waf-action") in ("challenge", "captcha")
+            or headers.get("cf-mitigated") == "challenge")
+
+
 def _europeana_access_error_message(payload):
     if not isinstance(payload, dict) or payload.get("success") is not False:
         return ""
@@ -39,13 +53,17 @@ def _europeana_access_error_message(payload):
     )
     return message if any(marker in folded for marker in access_markers) else ""
 
-def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
+
+def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3, required=False):
     check_work()
     key = hashlib.sha1(url.encode()).hexdigest()[:20]
     cpath = os.path.join(CACHE, f"{source}_{key}.json")
     if ttl_ok and os.path.exists(cpath):
         try:
-            return json.load(open(cpath))
+            with open(cpath, encoding="utf-8") as cache_file:
+                data = json.load(cache_file)
+            if not required or (isinstance(data, dict) and "error" not in data):
+                return data
         except Exception:
             pass
     # WordPress/Jetpack currently returns an empty media-search payload to
@@ -80,19 +98,29 @@ def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
     if wait > 0:
         pause(wait)
     last_failure = ""
+    status = None
     for attempt in range(attempts):
         check_work()
         count("provider_requests")
         try:
             req = urllib.request.Request(url, headers={**UA, **(headers or {})})
             with urllib.request.urlopen(req, timeout=network_timeout(timeout)) as r:
+                if _browser_challenge(getattr(r, "headers", {})):
+                    status = r.status
+                    last_failure = f"Collection requires browser verification (HTTP {status})"
+                    break
                 data = json.loads(r.read().decode())
+            if required and (not isinstance(data, dict) or "error" in data):
+                last_failure = "Collection returned an API error"
+                break
             _last_call[source] = time.time()
-            json.dump(data, open(cpath, "w"))
+            with open(cpath, "w", encoding="utf-8") as cache_file:
+                json.dump(data, cache_file)
             return data
         except WorkExpired:
             raise
         except urllib.error.HTTPError as e:
+            status = e.code
             if source == "europeana" and e.code in (401, 403, 429):
                 # Europeana documents 429 for an application usage limit and
                 # 401 for rejected authentication. A key limited, suspended,
@@ -102,16 +130,28 @@ def _get_json(url, source, ttl_ok=True, headers=None, timeout=45, attempts=3):
             if e.code in (429, 500, 502, 503):
                 last_failure = ("Collection is rate limiting requests (HTTP 429)" if e.code == 429
                                 else f"Collection service error (HTTP {e.code})")
-                count("provider_retries")
-                pause(5 * (attempt + 1)); continue
-            if e.code != 404:
-                note_failure(f"Collection refused access (HTTP {e.code})" if e.code in (401, 403)
-                             else f"Collection request failed (HTTP {e.code})")
-            return None
+                if attempt + 1 < attempts:
+                    count("provider_retries")
+                    pause(5 * (attempt + 1))
+                continue
+            if e.code == 404 and not required:
+                return None
+            if _browser_challenge(e.headers or {}):
+                last_failure = f"Collection requires browser verification (HTTP {e.code})"
+            elif e.code in (401, 403):
+                last_failure = f"Collection refused access (HTTP {e.code})"
+            else:
+                last_failure = f"Collection request failed (HTTP {e.code})"
+            break
         except Exception as exc:
+            status = None
             last_failure = ("Collection request timed out" if isinstance(exc, TimeoutError)
                             else "Collection connection failed")
-            pause(2 * (attempt + 1))
+            if attempt + 1 < attempts:
+                pause(2 * (attempt + 1))
+    if required:
+        count("provider_failures")
+        raise CollectionRequestError(last_failure, status)
     note_failure(last_failure)
     return None
 
@@ -299,25 +339,43 @@ def cleveland_page(query, offset, limit):
 
 # ---------------- Metropolitan Museum ----------------
 
-def met(query, need, cue=None):
-    d = _get_json(f"https://collectionapi.metmuseum.org/public/collection/v1/search"
-                  f"?q={_q(query)}&hasImages=true&title=true", "met")
-    ids = ((d or {}).get("objectIDs") or [])
-    ids = ids[:need * 4]
-    out = []
-    for oid in ids:
-        if len(out) >= need * 2:
+def _met_search_ids(query, max_ids):
+    offset = 0
+    while offset < max_ids:
+        limit = min(max_ids - offset, 500)
+        params = {"q": query, "hasImages": "true", "title": "true",
+                  "offset": offset, "limit": limit}
+        data = _get_json("https://collectionapi.metmuseum.org/public/collection/v1.1/search?"
+                         + urllib.parse.urlencode(params), "met", required=True)
+        ids = data.get("objectIDs") or []
+        yield from ids
+        offset += len(ids)
+        if not ids or len(ids) < limit or offset >= data["total"]:
             break
-        o = _get_json(f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{oid}", "met")
-        if not o or not o.get("primaryImage") or not o.get("isPublicDomain"):
-            continue
-        out.append({"source": "met", "source_id": str(oid),
-                    "title": o.get("title", ""), "artist": o.get("artistDisplayName", ""),
-                    "date": o.get("objectDate", ""), "medium": o.get("medium", ""),
-                    "license": "PD/CC0", "page_url": o.get("objectURL", ""),
-                    "image_url": o["primaryImage"],
-                    "thumb_url": o.get("primaryImageSmall") or o["primaryImage"],
-                    "width": 0, "height": 0})
+
+
+def _met_object(oid):
+    obj = _get_json(f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{oid}", "met")
+    if not obj or not obj.get("primaryImage") or not obj.get("isPublicDomain"):
+        return None
+    return {"source": "met", "source_id": str(oid),
+            "title": obj.get("title", ""), "artist": obj.get("artistDisplayName", ""),
+            "date": obj.get("objectDate", ""), "medium": obj.get("medium", ""),
+            "license": "PD/CC0", "page_url": obj.get("objectURL", ""),
+            "image_url": obj["primaryImage"],
+            "thumb_url": obj.get("primaryImageSmall") or obj["primaryImage"],
+            "width": 0, "height": 0}
+
+
+def met(query, need, cue=None):
+    ids = _met_search_ids(query, need * 4)
+    out = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        while len(out) < need * 2:
+            group = list(islice(ids, min(4, need * 2 - len(out))))
+            if not group:
+                break
+            out.extend(item for item in map_work(pool, _met_object, group) if item)
     return out
 
 # ---------------- Art Institute of Chicago ----------------
@@ -643,7 +701,8 @@ def aic(query, need, cue=None):
     d = _get_json(f"https://api.artic.edu/api/v1/artworks/search?q={_q(query)}"
                   f"&limit={candidate_limit}&fields=id,title,artist_display,date_display,"
                   f"medium_display,image_id,is_public_domain,thumbnail,description,"
-                  f"short_description,subject_titles,term_titles", "aic")
+                  f"short_description,subject_titles,term_titles", "aic",
+                  required=True, timeout=12, attempts=1)
     if _aic_search_is_fallback(d):
         return []
     artworks = [
